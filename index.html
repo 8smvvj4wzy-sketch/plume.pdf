@@ -1347,9 +1347,29 @@ function refreshImportPreview() {
 }
 
 $("#btn-impsig").addEventListener("click", () => $("#file-sig").click());
+// Safari décode mal certains PNG en 16 bits par canal (surtout niveaux de
+// gris + transparence) : la quasi-totalité de l'image ressort blanche,
+// silencieusement — rien dans la console ni d'erreur, juste un résultat vide
+// et mystérieux. On le détecte à l'avance pour prévenir plutôt que laisser
+// deviner. Chrome et Firefox n'ont pas ce problème, donc on tente quand même
+// l'import : l'avertissement seul suffit à orienter vers la bonne solution.
+async function pngBitDepth(file) {
+  try {
+    const head = new Uint8Array(await file.slice(0, 26).arrayBuffer());
+    const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+    for (let i = 0; i < 8; i++) if (head[i] !== sig[i]) return null;
+    if (String.fromCharCode(head[12], head[13], head[14], head[15]) !== "IHDR") return null;
+    return head[24];
+  } catch { return null; }
+}
+
 $("#file-sig").addEventListener("change", async (e) => {
   const f = e.target.files[0]; e.target.value = "";
   if (!f) return;
+  const isPng = f.type === "image/png" || /\.png$/i.test(f.name);
+  if (isPng && (await pngBitDepth(f)) === 16) {
+    toast("Ce PNG est en 16 bits par canal : si le résultat semble vide, réexportez-le en 8 bits (Aperçu → Fichier → Exporter) et réessayez.", 6000);
+  }
   busy(true, "Lecture de l'image…");
   try {
     const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);

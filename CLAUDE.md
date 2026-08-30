@@ -75,6 +75,18 @@ enregistrée à une fraction du cadre.
 
 ## Limites connues, à traiter si l'occasion se présente
 
+- **PNG 16 bits par canal (souvent niveaux de gris + transparence) : Safari
+  perd la quasi-totalité de l'encre au décodage.** Constaté avec un vrai
+  fichier : 99,8 % des pixels ressortent blancs contre ~93 % attendus, alors
+  que Chrome, Firefox et Windows décodent le même fichier correctement.
+  C'est un bug du décodeur d'image de Safari, en amont de tout ce que fait
+  cette page — impossible à corriger après coup en JavaScript, puisque les
+  pixels sont déjà mal décodés au moment où le code y a accès. `pngBitDepth()`
+  (juste avant le handler de `#file-sig`) détecte le cas en lisant les 26
+  premiers octets du fichier (signature PNG + IHDR) et avertit l'utilisateur
+  de réexporter en 8 bits (Aperçu → Fichier → Exporter) plutôt que le laisser
+  face à un résultat vide et silencieux.
+
 - Le texte ajouté utilise Helvetica (police standard PDF) : les caractères hors
   WinAnsi sont remplacés par `?` dans `safeText()`. Intégrer une vraie police
   demanderait fontkit.
