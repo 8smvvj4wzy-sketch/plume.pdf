@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plume — éditeur PDF local</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#1F5F5B">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -118,6 +122,7 @@ main{flex:1;display:flex;min-height:0}
 .thumb .pick{width:13px;height:13px;accent-color:var(--accent-hi);cursor:pointer}
 .thumb.dragging{opacity:.35}
 .thumb.drop-before .sheet{box-shadow:0 -3px 0 var(--accent-hi)}
+.thumb.drop-after .sheet{box-shadow:0 3px 0 var(--accent-hi)}
 .thumb .tools{
   position:absolute;top:4px;right:4px;display:none;gap:3px;
 }
@@ -625,15 +630,25 @@ function wireRailDrag() {
     el.addEventListener("dragstart", () => { dragged = el; el.classList.add("dragging"); });
     el.addEventListener("dragend", () => {
       dragged?.classList.remove("dragging"); dragged = null;
-      $("#thumbs").querySelectorAll(".thumb").forEach((t) => t.classList.remove("drop-before"));
+      $("#thumbs").querySelectorAll(".thumb").forEach((t) => t.classList.remove("drop-before", "drop-after"));
     });
-    el.addEventListener("dragover", (e) => { e.preventDefault(); if (el !== dragged) el.classList.add("drop-before"); });
-    el.addEventListener("dragleave", () => el.classList.remove("drop-before"));
+    el.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (el === dragged) return;
+      // le repère suit la moitié survolée, sinon la dernière position reste inatteignable
+      const after = e.clientY - el.getBoundingClientRect().top > el.offsetHeight / 2;
+      el.classList.toggle("drop-before", !after);
+      el.classList.toggle("drop-after", after);
+    });
+    el.addEventListener("dragleave", () => el.classList.remove("drop-before", "drop-after"));
     el.addEventListener("drop", (e) => {
-      e.preventDefault(); el.classList.remove("drop-before");
+      e.preventDefault();
+      const after = el.classList.contains("drop-after");
+      el.classList.remove("drop-before", "drop-after");
       if (!dragged || dragged === el) return;
       const from = S.pages.findIndex((p) => p.uid === dragged.dataset.uid);
-      const to = S.pages.findIndex((p) => p.uid === el.dataset.uid);
+      let to = S.pages.findIndex((p) => p.uid === el.dataset.uid) + (after ? 1 : 0);
+      if (from < to) to--; // le retrait décale d'un cran tous les index qui le suivaient
       const cur = S.pages[S.cur];
       const [moved] = S.pages.splice(from, 1);
       S.pages.splice(to, 0, moved);
@@ -830,7 +845,9 @@ $("#overlay").addEventListener("pointerdown", (e) => {
   const y = (e.clientY - rect.top) / S.scale;
 
   if (PENDING) {
-    const it = { id: nextId(), kind: "image", src: PENDING.src, x, y, w: PENDING.w, h: PENDING.h };
+    // centré sur le clic, pas calé sous le coin haut-gauche du curseur
+    const ix = Math.max(0, x - PENDING.w / 2), iy = Math.max(0, y - PENDING.h / 2);
+    const it = { id: nextId(), kind: "image", src: PENDING.src, x: ix, y: iy, w: PENDING.w, h: PENDING.h };
     p.items.push(it); PENDING = null; S.sel = it.id;
     $("#overlay").classList.remove("placing");
     paintItems(); toast("Objet posé. Faites glisser pour ajuster.");
@@ -879,8 +896,8 @@ function loadSigs() {
   drawSigList();
 }
 function saveSigs() {
-  try { localStorage.setItem(SIG_KEY, JSON.stringify(SIGS.list)); }
-  catch { toast("Signature utilisable, mais non conservée après fermeture."); }
+  try { localStorage.setItem(SIG_KEY, JSON.stringify(SIGS.list)); return true; }
+  catch { return false; }
 }
 function drawSigList() {
   const box = $("#sig-list"); box.innerHTML = "";
@@ -893,7 +910,9 @@ function drawSigList() {
       <button class="use">Poser</button><button class="rm" title="Retirer">✕</button>`;
     $(".use", el).addEventListener("click", () => {
       if (!S.pages.length) { toast("Ouvrez d'abord un PDF."); return; }
-      const w = 150, h = 150 * (sig.h / sig.w);
+      // relative à la page : une signature de 150 pt engloutit un reçu de caisse
+      const p = S.pages[S.cur];
+      const w = Math.min(200, viewW(p) * 0.32), h = w * (sig.h / sig.w);
       PENDING = { src: sig.src, w, h };
       $("#overlay").classList.add("placing");
       toast("Cliquez sur la page pour poser la signature.");
@@ -962,14 +981,24 @@ $("#pad-save").addEventListener("click", () => {
   const out = document.createElement("canvas");
   out.width = Math.round(w * 2); out.height = Math.round(h * 2);
   out.getContext("2d").drawImage($("#pad"), x0 * 2, y0 * 2, w * 2, h * 2, 0, 0, out.width, out.height);
-  addSignature(out.toDataURL("image/png"), out.width, out.height);
+  addSignature(out);
   $("#sig-modal").classList.remove("on");
 });
 
-function addSignature(src, w, h) {
-  SIGS.list.push({ src, w, h });
-  saveSigs(); drawSigList();
-  toast("Signature enregistrée.");
+function addSignature(c) {
+  const sig = { src: c.toDataURL("image/png"), w: c.width, h: c.height };
+  SIGS.list.push(sig);
+  let ok = saveSigs();
+  // la mémoire du navigateur est pleine : on retente plus léger avant d'abandonner
+  for (const maxW of [1000, 800]) {
+    if (ok) break;
+    const smaller = downscale(c, maxW);
+    sig.src = smaller.toDataURL("image/png"); sig.w = smaller.width; sig.h = smaller.height;
+    ok = saveSigs();
+  }
+  drawSigList();
+  toast(ok ? "Signature enregistrée." :
+    "Signature utilisable maintenant, mais la mémoire du navigateur est pleine : supprimez une ancienne signature pour la conserver après fermeture.");
 }
 
 /* ------------------------------------------- import de signature (tous formats)
@@ -1007,6 +1036,29 @@ function imageToCanvas(dataUrl) {
   });
 }
 
+// une photo de téléphone stocke sa rotation dans l'EXIF plutôt que dans ses
+// pixels ; createImageBitmap la corrige au décodage, contrairement à un
+// <img> sur certaines versions de navigateur. Le repli couvre les formats
+// qu'il refuse (SVG sur certains moteurs) et les navigateurs qui ne l'ont pas.
+async function fileToCanvas(file) {
+  if (window.createImageBitmap) {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+      let w = bmp.width, h = bmp.height;
+      const max = 3200, long = Math.max(w, h);
+      if (long > max) { const k = max / long; w = Math.round(w * k); h = Math.round(h * k); }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const ctx = c.getContext("2d");
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(bmp, 0, 0, w, h);
+      bmp.close();
+      return c;
+    } catch (err) { console.warn("createImageBitmap indisponible, repli sur <img>.", err); }
+  }
+  return imageToCanvas(await fileToDataUrl(file));
+}
+
 async function pdfToCanvas(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
@@ -1042,6 +1094,46 @@ function downscale(src, maxW) {
 
 const lumAt = (d, i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
 
+// composantes connexes (8-voisins) sur le masque d'opacité : une poussière
+// isolée de moins de 0,3 % de la taille du plus grand trait est effacée
+// avant le recadrage. Sans ça, un seul pixel de bruit dans un coin gonfle
+// le cadre et la signature n'occupe plus qu'une fraction de l'image posée.
+function despeckle(A, w, h) {
+  const total = w * h;
+  const visited = new Uint8Array(total);
+  const label = new Int32Array(total).fill(-1);
+  const stack = new Int32Array(total);
+  const sizes = [];
+  for (let start = 0; start < total; start++) {
+    if (visited[start] || A[start] <= 20) continue;
+    let len = 0;
+    stack[len++] = start; visited[start] = 1;
+    const compId = sizes.length;
+    let size = 0;
+    while (len > 0) {
+      const cur = stack[--len];
+      label[cur] = compId; size++;
+      const cx = cur % w, cy = (cur / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = cy + dy; if (ny < 0 || ny >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = cx + dx; if (nx < 0 || nx >= w) continue;
+          const nidx = ny * w + nx;
+          if (visited[nidx] || A[nidx] <= 20) continue;
+          visited[nidx] = 1; stack[len++] = nidx;
+        }
+      }
+    }
+    sizes.push(size);
+  }
+  if (!sizes.length) return;
+  const minKeep = Math.max(1, Math.max(...sizes) * 0.003);
+  for (let i = 0; i < total; i++) {
+    if (label[i] >= 0 && sizes[label[i]] < minKeep) A[i] = 0;
+  }
+}
+
 /* Détourage adaptatif : on estime d'abord la clarté du papier zone par zone
    (une photo n'est jamais éclairée uniformément), puis on mesure l'écart entre
    chaque pixel et son papier local. Les bords du trait gardent leurs demi-teintes,
@@ -1052,36 +1144,57 @@ function processSignature(src, opt) {
   const ctx = src.getContext("2d", { willReadFrequently: true });
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
+  const NB = 256;
 
-  // 1. carte du papier : luminance maximale par tuile
+  const histPercentile = (hist, total, p) => {
+    if (total <= 0) return NB - 1;
+    const target = total * p;
+    let acc = 0;
+    for (let b = 0; b < NB; b++) { acc += hist[b]; if (acc >= target) return b; }
+    return NB - 1;
+  };
+
+  // 1. carte du papier : histogramme de luminance par tuile. L'estimation
+  //    retenue pour chaque tuile est le 90e centile de l'histogramme cumulé
+  //    sur son voisinage 3x3 — plus robuste qu'un simple maximum, qu'un seul
+  //    pixel de bruit peut faire dérailler. Un plancher fondé sur le 95e
+  //    centile global protège en plus les tuiles entièrement couvertes
+  //    d'encre : leur estimation locale ne peut plus s'effondrer sous le
+  //    papier réellement le plus clair du document.
   const tile = Math.max(8, Math.round(Math.max(w, h) / 22));
   const tx = Math.ceil(w / tile), ty = Math.ceil(h / tile);
-  const bg = new Float32Array(tx * ty);
+  const tileHist = new Uint32Array(tx * ty * NB);
+  const globalHist = new Uint32Array(NB);
   for (let j = 0; j < ty; j++) {
     for (let i = 0; i < tx; i++) {
-      let mx = 0;
+      const base = (j * tx + i) * NB;
       const xe = Math.min(w, (i + 1) * tile), ye = Math.min(h, (j + 1) * tile);
       for (let y = j * tile; y < ye; y++) {
         let p = (y * w + i * tile) * 4;
         for (let x = i * tile; x < xe; x++, p += 4) {
           const l = d[p + 3] < 12 ? 255 : lumAt(d, p);
-          if (l > mx) mx = l;
+          const bin = l < 0 ? 0 : l > 255 ? 255 : l | 0;
+          tileHist[base + bin]++; globalHist[bin]++;
         }
       }
-      bg[j * tx + i] = mx || 255;
     }
   }
-  // 2. lissage de la carte pour éviter les ruptures entre tuiles
-  const sm = new Float32Array(bg.length);
+  let globalTotal = 0; for (let b = 0; b < NB; b++) globalTotal += globalHist[b];
+  const floor = 0.65 * histPercentile(globalHist, globalTotal, 0.95);
+
+  const sm = new Float32Array(tx * ty);
+  const combined = new Uint32Array(NB);
   for (let j = 0; j < ty; j++) {
     for (let i = 0; i < tx; i++) {
-      let s = 0, n = 0;
+      combined.fill(0);
+      let total = 0;
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
         const jj = j + dj, ii = i + di;
         if (jj < 0 || ii < 0 || jj >= ty || ii >= tx) continue;
-        s += bg[jj * tx + ii]; n++;
+        const base = (jj * tx + ii) * NB;
+        for (let b = 0; b < NB; b++) { combined[b] += tileHist[base + b]; total += tileHist[base + b]; }
       }
-      sm[j * tx + i] = s / n;
+      sm[j * tx + i] = Math.max(floor, histPercentile(combined, total, 0.9));
     }
   }
   const paperAt = (x, y) => { // interpolation bilinéaire
@@ -1095,7 +1208,31 @@ function processSignature(src, opt) {
     return (a * (1 - ax) + b * ax) * (1 - ay) + (c * (1 - ax) + e * ax) * ay;
   };
 
-  const lo = (70 - opt.sens) / 200;   // écart minimal pour être considéré comme encre
+  // 2. écart papier/pixel pour chaque point, et mesure du bruit de fond : un
+  //    écart en dessous du 90e centile de cette mesure, sur toute l'image,
+  //    est presque sûrement du grain de papier plutôt que de l'encre — la
+  //    sensibilité choisie par l'utilisateur ne peut jamais descendre en
+  //    dessous de ce plancher, c'est ce qui retire le voile gris. Un pixel
+  //    déjà transparent (photo déjà détourée, PDF avec fond alpha) compte
+  //    comme papier (k = 0) dans cette mesure : sinon, sur une image dont le
+  //    fond est déjà retiré, seule l'encre reste à échantillonner et le
+  //    plancher grimpe jusqu'à confondre le trait avec du bruit.
+  const K = new Float32Array(w * h);
+  const kHist = new Uint32Array(NB);
+  let kTotal = 0;
+  for (let y = 0; y < h; y++) {
+    let p = y * w * 4;
+    for (let x = 0; x < w; x++, p += 4) {
+      if (d[p + 3] < 12) { K[y * w + x] = -1; kHist[0]++; kTotal++; continue; }
+      const local = Math.max(40, paperAt(x, y));
+      let k = (local - lumAt(d, p)) / local;
+      k = k < 0 ? 0 : k > 1 ? 1 : k;
+      K[y * w + x] = k;
+      kHist[(k * (NB - 1)) | 0]++; kTotal++;
+    }
+  }
+  const loFloor = (histPercentile(kHist, kTotal, 0.9) / (NB - 1)) * 1.15;
+  const lo = Math.max((70 - opt.sens) / 200, loFloor); // écart minimal pour être considéré comme encre
   const span = 0.16;                  // largeur de la transition (dégradé des bords)
   const gain = opt.gain;
   const tint = opt.color !== "orig" ? opt.color : null;
@@ -1103,25 +1240,24 @@ function processSignature(src, opt) {
   const tg = tint ? parseInt(tint.slice(3, 5), 16) : 0;
   const tb = tint ? parseInt(tint.slice(5, 7), 16) : 0;
 
-  // 3. masque d'opacité, calculé à part pour pouvoir l'épaissir ensuite
+  // 3. masque d'opacité, calculé à part pour pouvoir le nettoyer et l'épaissir.
+  //    Le trait doit être opaque, pas une ombre grise : on ne corrige plus la
+  //    courbe après le gain, le cœur du trait sort déjà à pleine opacité et
+  //    seul le liseré des bords garde un dégradé.
   const A = new Uint8ClampedArray(w * h);
-  for (let y = 0; y < h; y++) {
-    let p = y * w * 4;
-    for (let x = 0; x < w; x++, p += 4) {
-      if (d[p + 3] < 12) continue;
-      const local = Math.max(40, paperAt(x, y));
-      const k = (local - lumAt(d, p)) / local;      // 0 = papier, 1 = encre franche
-      let a = (k - lo) / span;
-      a = a <= 0 ? 0 : a >= 1 ? 1 : a * a * (3 - 2 * a); // transition douce
-      a = Math.min(1, a * gain);
-      // le trait doit être opaque, pas une ombre grise : on pousse les demi-teintes
-      // vers l'opacité et on ne garde le dégradé que sur le liseré des bords.
-      a = Math.pow(a, 0.45);
-      A[y * w + x] = Math.round(a * 255);
-    }
+  for (let i = 0; i < w * h; i++) {
+    const k = K[i];
+    if (k < 0) continue;
+    let a = (k - lo) / span;
+    a = a <= 0 ? 0 : a >= 1 ? 1 : a * a * (3 - 2 * a); // transition douce
+    A[i] = Math.round(Math.min(1, a * gain) * 255);
   }
 
-  // 4. épaississement facultatif (filtre maximum), pour les traits fins ou pâles
+  // 4. dégrisage, avant tout le reste : une tache de poussière ne doit ni
+  //    rester visible ni gonfler le cadrage calculé plus bas.
+  despeckle(A, w, h);
+
+  // 5. épaississement facultatif (filtre maximum), pour les traits fins ou pâles
   let M = A;
   if (opt.bold) {
     const r = Math.max(1, Math.round(Math.max(w, h) / 900));
@@ -1204,7 +1340,7 @@ $("#file-sig").addEventListener("change", async (e) => {
   busy(true, "Lecture de l'image…");
   try {
     const isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
-    impSrc = isPdf ? await pdfToCanvas(f) : await imageToCanvas(await fileToDataUrl(f));
+    impSrc = isPdf ? await pdfToCanvas(f) : await fileToCanvas(f);
     impPrev = downscale(impSrc, 760);
     $("#imp-modal").classList.add("on");
     refreshImportPreview();
@@ -1217,7 +1353,14 @@ $("#file-sig").addEventListener("change", async (e) => {
   } finally { busy(false); }
 });
 ["imp-cut", "imp-col", "imp-bold"].forEach((id) => $("#" + id).addEventListener("change", refreshImportPreview));
-["imp-th", "imp-gain"].forEach((id) => $("#" + id).addEventListener("input", refreshImportPreview));
+// débounce : le détourage recalcule un histogramme par tuile à chaque appel,
+// inutile de le refaire à chaque pixel de déplacement du curseur
+let previewDebounce;
+const refreshImportPreviewSoon = () => {
+  clearTimeout(previewDebounce);
+  previewDebounce = setTimeout(refreshImportPreview, 120);
+};
+["imp-th", "imp-gain"].forEach((id) => $("#" + id).addEventListener("input", refreshImportPreviewSoon));
 $("#imp-cancel").addEventListener("click", () => {
   $("#imp-modal").classList.remove("on"); impSrc = impPrev = null;
 });
@@ -1228,8 +1371,8 @@ $("#imp-save").addEventListener("click", () => {
   setTimeout(() => {
     try {
       let c = processSignature(copyOf(impSrc), readOpts());
-      c = downscale(c, 1800); // assez fin pour l'impression, assez léger pour être conservé
-      addSignature(c.toDataURL("image/png"), c.width, c.height);
+      c = downscale(c, 1400); // assez fin pour l'impression, assez léger pour être conservé
+      addSignature(c);
       $("#imp-modal").classList.remove("on"); impSrc = impPrev = null;
     } catch (err) { console.error(err); toast("Le traitement de l'image a échoué."); }
     finally { busy(false); }
@@ -1568,6 +1711,12 @@ window.addEventListener("drop", (e) => {
 loadSigs();
 drawTabs();
 syncChrome();
+
+// installe l'app hors connexion une fois ouverte depuis le web ; sur la
+// version autonome ouverte en file://, ce garde-fou évite une erreur inutile
+if (location.protocol === "https:" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 </script>
 </body>
 </html>

@@ -11,8 +11,12 @@ Téléchargez `dist/Plume-PDF-autonome.html` et ouvrez-le d'un double-clic. Rien
 installer. Ce fichier contient tout ce dont il a besoin et fonctionne sans
 connexion — vous pouvez le transmettre par AirDrop, par mail ou sur une clé USB.
 
-Une version en ligne est également publiée à chaque mise à jour du dépôt, via
-GitHub Pages.
+Une version en ligne, tout aussi autonome (aucune requête vers un CDN), est
+publiée à chaque mise à jour du dépôt sur GitHub Pages. Pour l'installer comme
+une application de bureau : ouvrez l'URL dans Safari, puis **Fichier → Ajouter
+au Dock** (sur Chrome : menu ⋮ → *Diffuser, enregistrer et partager* →
+*Installer*). Elle fonctionne ensuite sans connexion, comme la version
+téléchargée.
 
 ## Ce que fait le programme
 
@@ -47,7 +51,10 @@ Le fichier produit atterrit dans `dist/`.
 ```
 index.html                    l'application (charge ses bibliothèques depuis un CDN)
 build.py                      fabrique la version autonome hors ligne
+scripts/make_icons.py         régénère les icônes dans icons/
 vendor/                       pdf.js, pdf-lib et JSZip, figés
+icons/                        icônes de l'app (favicon, PWA, Dock)
+manifest.webmanifest, sw.js   installation comme application de bureau, mode hors ligne
 dist/                         version autonome produite (non versionnée)
 .github/workflows/pages.yml   construction et publication automatiques
 CLAUDE.md                     notes d'architecture pour Claude Code

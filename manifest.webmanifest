@@ -1,0 +1,15 @@
+{
+  "name": "Plume",
+  "short_name": "Plume",
+  "description": "Éditeur PDF local : texte, signatures, masquage, export PDF/Word/PNG. Rien ne quitte votre ordinateur.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#23282B",
+  "theme_color": "#1F5F5B",
+  "lang": "fr",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

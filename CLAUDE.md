@@ -49,11 +49,29 @@ Conséquences à ne pas casser :
 
 ### Le détourage des signatures
 
-`processSignature()` estime la clarté du papier tuile par tuile, puis compare
-chaque pixel à son voisinage. Un seuil global ne fonctionne pas : une photo n'est
-jamais éclairée uniformément. La correction `Math.pow(a, 0.45)` rend le trait
-opaque au lieu de gris pâle — c'est ce qui distingue un rendu correct d'une
-signature délavée. Ne pas la retirer sans une bonne raison.
+`processSignature()` estime la clarté du papier tuile par tuile (90e centile
+d'un histogramme, agrégé sur un voisinage 3x3 de tuiles, avec un plancher fondé
+sur le 95e centile global), puis compare chaque pixel à son papier local. Un
+seuil global ne fonctionne pas : une photo n'est jamais éclairée uniformément,
+et une tuile entièrement couverte d'encre sous-estimerait son propre papier
+sans ce plancher.
+
+Le seuil de détection (`lo`) ne descend jamais sous un plancher mesuré sur
+l'écart papier/pixel de **toute l'image, transparence comprise** — un pixel
+déjà transparent compte comme papier (écart nul). Compter uniquement les
+pixels non transparents casserait tout sur une image déjà détourée (PNG avec
+alpha) : il ne resterait alors à échantillonner que de l'encre, et le plancher
+grimperait jusqu'à rendre le trait indétectable. C'est une régression qui s'est
+produite une fois ; ne pas réintroduire ce filtre par pixel sans repenser le
+calcul du plancher.
+
+Le cœur du trait sort à pleine opacité, sans correction de courbe après le
+gain (`Math.pow` a été retiré) : la couleur d'encre par défaut est déjà un noir
+franc, et forcer les demi-teintes vers l'opaque ne faisait que boucher les
+boucles fines. `despeckle()` (composantes connexes, 8-voisins) élimine les
+taches isolées de moins de 0,3 % de la taille du plus grand trait avant le
+recadrage, sinon un seul pixel de bruit dans un coin réduit la signature
+enregistrée à une fraction du cadre.
 
 ## Limites connues, à traiter si l'occasion se présente
 
@@ -63,7 +81,8 @@ signature délavée. Ne pas la retirer sans une bonne raison.
 - Pas d'annuler / rétablir.
 - L'export Word en mode texte perd tableaux et colonnes ; c'est assumé.
 - Les signatures sont conservées dans `localStorage`, donc propres à un
-  navigateur et à une machine.
+  navigateur et à une machine. `addSignature()` retente à 1000 puis 800 px si
+  le quota est dépassé, mais reste par nature limité à cet onglet.
 
 ## Vérifications avant de valider une modification
 

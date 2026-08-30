@@ -26,10 +26,11 @@ jobs:
       - name: Assembler le site
         run: |
           mkdir -p site
-          cp index.html site/index.html
-          cp vendor/*.js site/ 2>/dev/null || true
-          mkdir -p site/vendor && cp vendor/*.js site/vendor/
+          # servi en ligne : la version autonome, aucune requête vers un CDN
+          cp dist/Plume-PDF-autonome.html site/index.html
           cp dist/Plume-PDF-autonome.html site/Plume-PDF-autonome.html
+          cp manifest.webmanifest sw.js site/
+          cp -r icons site/icons
 
       - uses: actions/upload-pages-artifact@v3
         with:
