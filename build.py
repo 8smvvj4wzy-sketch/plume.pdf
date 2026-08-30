@@ -67,9 +67,17 @@ def main():
     if WORKER_LINE not in html:
         fail("la ligne définissant workerSrc a changé ; adaptez build.py.")
     html = html.replace(WORKER_LINE, WORKER_LOCAL)
+    # le tag doit exister AVANT que le script de l'app ne s'exécute et le
+    # cherche : inséré juste après <body>, pas juste avant </body> (le script
+    # de l'app est le dernier élément du corps de page, donc un ajout en fin
+    # de body atterrit après lui, et document.getElementById() y renvoie null
+    # au moment où l'app en a besoin).
+    if html.count("<body>") != 1:
+        fail("la balise <body> n'a pas été trouvée une seule fois.")
     html = html.replace(
-        "</body>",
-        '<script type="text/plain" id="pdf-worker-src">%s</script>\n</body>' % code["pdf.worker"],
+        "<body>",
+        '<body>\n<script type="text/plain" id="pdf-worker-src">%s</script>' % code["pdf.worker"],
+        1,
     )
 
     if "cdnjs.cloudflare.com" in html:
