@@ -1,7 +1,9 @@
-// Mise en cache minimale : une fois l'app ouverte une première fois, elle
-// doit continuer à fonctionner sans connexion. Cache-first, avec un repli
-// réseau qui rafraîchit le cache pour la prochaine visite.
-const CACHE = "plume-v1";
+// Réseau d'abord, cache en secours : chaque visite en ligne doit voir la
+// dernière version publiée. Un cache-d'abord semblait plus rapide, mais il
+// ne revérifie jamais le réseau une fois rempli — un correctif publié
+// resterait invisible indéfiniment pour qui a déjà ouvert l'app une fois.
+// Hors connexion, on retombe sur la dernière version connue.
+const CACHE = "plume-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -27,15 +29,12 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   e.respondWith(
-    caches.match(e.request).then((hit) =>
-      hit ||
-      fetch(e.request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
-          return res;
-        })
-        .catch(() => hit)
-    )
+    fetch(e.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
