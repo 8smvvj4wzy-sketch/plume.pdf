@@ -1,0 +1,8 @@
+# version produite par build.py
+dist/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/

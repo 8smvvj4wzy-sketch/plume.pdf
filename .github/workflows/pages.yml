@@ -1,0 +1,47 @@
+name: Publier sur GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  construire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construire la version autonome
+        run: python3 build.py
+
+      - name: Assembler le site
+        run: |
+          mkdir -p site
+          # servi en ligne : la version autonome, aucune requête vers un CDN
+          cp dist/Plume-PDF-autonome.html site/index.html
+          cp dist/Plume-PDF-autonome.html site/Plume-PDF-autonome.html
+          cp manifest.webmanifest sw.js site/
+          cp -r icons site/icons
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  publier:
+    needs: construire
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - id: deploiement
+        uses: actions/deploy-pages@v4
