@@ -1026,8 +1026,14 @@ function imageToCanvas(dataUrl) {
       if (long > max) { const k = max / long; w = Math.round(w * k); h = Math.round(h * k); }
       const c = document.createElement("canvas");
       c.width = w; c.height = h;
-      const ctx = c.getContext("2d");
+      const ctx = c.getContext("2d", { colorSpace: "srgb" });
       ctx.imageSmoothingQuality = "high";
+      // aplati sur du blanc opaque avant toute analyse : une image déjà
+      // transparente ne doit pas dépendre de la façon dont chaque navigateur
+      // relit la transparence native (Safari et Chrome ne s'accordent pas
+      // toujours sur la reconstitution des canaux sous un pixel translucide).
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
       ctx.drawImage(im, 0, 0, w, h);
       res(c);
     };
@@ -1049,8 +1055,10 @@ async function fileToCanvas(file) {
       if (long > max) { const k = max / long; w = Math.round(w * k); h = Math.round(h * k); }
       const c = document.createElement("canvas");
       c.width = w; c.height = h;
-      const ctx = c.getContext("2d");
+      const ctx = c.getContext("2d", { colorSpace: "srgb" });
       ctx.imageSmoothingQuality = "high";
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
       ctx.drawImage(bmp, 0, 0, w, h);
       bmp.close();
       return c;
@@ -1077,7 +1085,7 @@ function downscale(src, maxW) {
   while (c.width > maxW * 2) {
     const n = document.createElement("canvas");
     n.width = Math.round(c.width / 2); n.height = Math.round(c.height / 2);
-    const x = n.getContext("2d");
+    const x = n.getContext("2d", { colorSpace: "srgb" });
     x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
     x.drawImage(c, 0, 0, n.width, n.height);
     c = n;
@@ -1086,7 +1094,7 @@ function downscale(src, maxW) {
   const n = document.createElement("canvas");
   const k = maxW / c.width;
   n.width = maxW; n.height = Math.round(c.height * k);
-  const x = n.getContext("2d");
+  const x = n.getContext("2d", { colorSpace: "srgb" });
   x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
   x.drawImage(c, 0, 0, n.width, n.height);
   return n;
@@ -1146,7 +1154,7 @@ function despeckle(A, w, h) {
 function processSignature(src, opt) {
   if (!opt.cut) return src;
   const w = src.width, h = src.height;
-  const ctx = src.getContext("2d", { willReadFrequently: true });
+  const ctx = src.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
   const NB = 256;
@@ -1320,7 +1328,7 @@ function readOpts() {
 function copyOf(c) {
   const n = document.createElement("canvas");
   n.width = c.width; n.height = c.height;
-  n.getContext("2d").drawImage(c, 0, 0);
+  n.getContext("2d", { colorSpace: "srgb" }).drawImage(c, 0, 0);
   return n;
 }
 
