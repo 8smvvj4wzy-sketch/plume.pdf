@@ -97,6 +97,7 @@ const MAKE_FIXTURE = async (marker) => {
 /** Charge le jeu d'essai dans l'application, comme le ferait un glisser-déposer. */
 async function loadFixture(page, marker = "CONFIDENTIEL") {
   await page.evaluate(async ({ src, marker }) => {
+    window.__fixture = src;   // les tests qui insèrent un second PDF le refont
     const bytes = await new Function("PDFDocument", "StandardFonts", "marker",
       "return (" + src + ")(marker)")(PDFDocument, StandardFonts, marker);
     const file = new File([bytes], "essai.pdf", { type: "application/pdf" });
@@ -533,6 +534,88 @@ async function testRecherche() {
   await context.close();
 }
 
+/* ------------------------------------------------- 8. pages et document */
+
+async function testPages() {
+  section("Pages et document");
+  const { context, page } = await openApp();
+  await loadFixture(page);
+
+  const dup = await page.evaluate(() => {
+    S.cur = 0;
+    S.pages[0].items = [{ id: "x", kind: "mask", x: 5, y: 5, w: 20, h: 10, color: "#FFFFFF" }];
+    const n = S.pages.length;
+    duplicatePage();
+    const a = S.pages[0], b = S.pages[1];
+    // la copie doit partager la source mais pas les objets
+    b.items[0].x = 999;
+    return { n, apres: S.pages.length, memeDoc: a.docId === b.docId && a.index === b.index,
+             uidDistincts: a.uid !== b.uid, itemsIndependants: a.items[0].x === 5,
+             cur: S.cur };
+  });
+  check("dupliquer ajoute une page", dup.apres === dup.n + 1);
+  check("la copie vise la même page source", dup.memeDoc);
+  check("elle a son propre identifiant", dup.uidDistincts);
+  check("ses objets sont indépendants de l'original", dup.itemsIndependants);
+  check("la vue se place sur la copie", dup.cur === 1);
+
+  const blanche = await page.evaluate(async () => {
+    const n = S.pages.length;
+    S.cur = 0;
+    await insertBlank();
+    const p = S.pages[1];
+    const c = await pageToCanvas(p, 400);
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let sombres = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] < 200) sombres++;
+    return { n, apres: S.pages.length, sombres, cur: S.cur,
+             format: [Math.round(p.W), Math.round(p.H)] };
+  });
+  check("insérer une page blanche l'ajoute après la page courante",
+    blanche.apres === blanche.n + 1 && blanche.cur === 1);
+  check(`elle est vraiment blanche (${blanche.sombres} px sombres)`, blanche.sombres === 0);
+  check(`elle reprend le format du document (${blanche.format})`,
+    blanche.format[0] === 595 && blanche.format[1] === 842);
+
+  const ins = await page.evaluate(async () => {
+    const bytes = await new Function("PDFDocument", "StandardFonts", "marker",
+      "return (" + window.__fixture + ")(marker)")(PDFDocument, StandardFonts, "INSERE");
+    const n = S.pages.length;
+    S.cur = 1;
+    await loadPdf(new File([bytes], "ins.pdf", { type: "application/pdf" }), true, 2);
+    return { n, apres: S.pages.length, cur: S.cur,
+             ordre: S.pages.map((p) => p.docId === S.pages[2].docId) };
+  });
+  check("insérer un PDF ajoute ses pages", ins.apres === ins.n + 2);
+  check("elles atterrissent à la position demandée",
+    ins.ordre[2] && ins.ordre[3] && !ins.ordre[0] && !ins.ordre[1]);
+
+  const num = await page.evaluate(() => {
+    numberPages();
+    const un = S.pages.map((p) => p.items.filter((i) => i.auto === "num").length);
+    numberPages();  // deux fois de suite ne doit pas empiler
+    const deux = S.pages.map((p) => p.items.filter((i) => i.auto === "num").length);
+    const textes = S.pages.map((p) => p.items.find((i) => i.auto === "num").text);
+    return { un, deux, textes, n: S.pages.length };
+  });
+  check("chaque page reçoit un numéro", num.un.every((v) => v === 1));
+  check("numéroter deux fois ne double pas les numéros", num.deux.every((v) => v === 1));
+  check(`les numéros suivent l'ordre (${num.textes[0]} … ${num.textes.at(-1)})`,
+    num.textes[0] === `1 / ${num.n}` && num.textes.at(-1) === `${num.n} / ${num.n}`);
+
+  const meta = await page.evaluate(async () => {
+    S.meta = { title: "Titre d'essai", author: "Autrice" };
+    const bytes = await buildPdf([S.pages[0]]);
+    const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+    const { info } = await doc.getMetadata();
+    return { titre: info.Title, auteur: info.Author };
+  });
+  check(`le titre est écrit dans le PDF (${meta.titre})`, meta.titre === "Titre d'essai");
+  check(`l'auteur est écrit dans le PDF (${meta.auteur})`, meta.auteur === "Autrice");
+
+  await context.close();
+}
+
 /* ------------------------------------------------ 7. annuler / rétablir */
 
 /* Enchaîne des gestes de natures différentes, puis affirme qu'une empreinte
@@ -629,6 +712,7 @@ const SUITE = [
   ["caviardage", testCaviardage],
   ["annotation", testAnnotation],
   ["recherche", testRecherche],
+  ["pages", testPages],
   ["annuler", testAnnuler],
   ["autonome", testAutonome],
 ];

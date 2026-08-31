@@ -379,7 +379,20 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
       <div class="stack">
         <button class="btn" id="btn-rot-l">Pivoter à gauche</button>
         <button class="btn" id="btn-rot-r">Pivoter à droite</button>
+        <button class="btn" id="btn-dup">Dupliquer la page</button>
+        <button class="btn" id="btn-blank">Insérer une page blanche</button>
+        <button class="btn" id="btn-insert">Insérer un PDF ici…</button>
         <button class="btn" id="btn-del">Supprimer la page</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h3>Document</h3>
+      <div class="stack">
+        <button class="btn" id="btn-numbers">Numéroter les pages</button>
+        <button class="btn" id="btn-watermark">Ajouter un filigrane…</button>
+        <button class="btn" id="btn-meta">Titre et auteur…</button>
+        <button class="btn" id="btn-print">Imprimer</button>
       </div>
     </div>
 
@@ -459,6 +472,7 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
 
 <input type="file" id="file-pdf" accept="application/pdf" hidden>
 <input type="file" id="file-merge" accept="application/pdf" hidden>
+<input type="file" id="file-insert" accept="application/pdf" hidden>
 <input type="file" id="file-img" accept="image/png,image/jpeg" hidden>
 <input type="file" id="file-sig" accept="image/*,application/pdf,.svg,.heic,.heif" hidden>
 
@@ -481,6 +495,7 @@ function newState(name) {
     sel: null,           // uid de l'objet sélectionné
     name: name || "Nouveau projet",
     picked: new Set(),   // uid des pages cochées
+    meta: null,          // { title, author }, écrits dans le PDF produit
     undo: [],            // instantanés antérieurs, le plus récent en dernier
     redo: [],
   };
@@ -628,7 +643,9 @@ function closeTab(i) {
 }
 
 /* ------------------------------------------------------------- chargement */
-async function loadPdf(file, merge = false) {
+/* `at` : position d'insertion dans S.pages. Absent, les pages vont à la fin —
+   c'est le comportement de « Ajouter au projet ». */
+async function loadPdf(file, merge = false, at = null) {
   busy(true, "Lecture du document…");
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -637,23 +654,141 @@ async function loadPdf(file, merge = false) {
     if (!merge) { // chaque document ouvert prend son propre onglet
       const t = { id: "t" + Date.now(), state: newState(file.name) };
       TABS.push(t); active = TABS.length - 1; S = t.state;
-    }
+    } else snapshot();
     const docId = "d" + Date.now() + Math.random().toString(36).slice(2, 6);
     S.docs.set(docId, { bytes, pdfjs: doc });
 
+    const neuves = [];
     for (let i = 0; i < doc.numPages; i++) {
       const pg = await doc.getPage(i + 1);
       const v = pg.view; // [x0,y0,x1,y1] non pivoté
-      S.pages.push({
+      neuves.push({
         uid: nextId(), docId, index: i, rot: ((pg.rotate % 360) + 360) % 360,
         W: v[2] - v[0], H: v[3] - v[1], items: [],
       });
     }
+    S.pages.splice(at ?? S.pages.length, 0, ...neuves);
+    if (at !== null) S.cur = at;
     drawTabs(); buildRail(); await renderMain(); syncChrome();
     toast(merge ? `${doc.numPages} page(s) ajoutée(s)` : `${doc.numPages} page(s) chargée(s)`);
   } catch (e) {
     console.error(e);
     toast(String(e).includes("password") ? "Ce PDF est protégé par mot de passe." : "Impossible de lire ce fichier.");
+  } finally { busy(false); }
+}
+
+/* ------------------------------------------------------- pages du projet
+   Plusieurs pages peuvent viser le même document source : buildPdf() recopie
+   la page voulue à chaque fois (copyPages sur p.index). Dupliquer revient donc
+   à ajouter une entrée de plus, sans toucher aux octets d'origine. */
+function duplicatePage() {
+  const p = S.pages[S.cur]; if (!p) return;
+  snapshot();
+  S.pages.splice(S.cur + 1, 0, {
+    ...p, uid: nextId(), items: p.items.map((it) => ({ ...it })),
+  });
+  S.cur++;
+  buildRail(); renderMain(); syncChrome();
+  toast("Page dupliquée.");
+}
+
+/* Une page blanche est un vrai PDF d'une page, fabriqué à la volée et rangé
+   dans S.docs comme un document importé : le reste du programme n'a pas à
+   savoir qu'elle n'est venue d'aucun fichier. */
+async function insertBlank() {
+  const ref = S.pages[S.cur];
+  const W = ref ? ref.W : 595.28, H = ref ? ref.H : 841.89;
+  busy(true, "Création de la page…");
+  try {
+    const doc = await PDFDocument.create();
+    doc.addPage([W, H]);
+    const bytes = new Uint8Array(await doc.save());
+    const pdfjs = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+    const docId = "d" + Date.now() + Math.random().toString(36).slice(2, 6);
+    snapshot();
+    S.docs.set(docId, { bytes, pdfjs });
+    const at = S.pages.length ? S.cur + 1 : 0;
+    S.pages.splice(at, 0, { uid: nextId(), docId, index: 0, rot: 0, W, H, items: [] });
+    S.cur = at;
+    buildRail(); await renderMain(); syncChrome();
+    toast("Page blanche insérée.");
+  } catch (e) { console.error(e); toast("La création de la page a échoué."); }
+  finally { busy(false); }
+}
+
+/* Numérotation et filigrane sont des textes posés en série : ils passent par
+   le chemin d'export existant, il n'y a rien à ajouter à buildPdf(). */
+function numberPages() {
+  if (!S.pages.length) return;
+  snapshot();
+  S.pages.forEach((p, i) => {
+    // on retire une numérotation précédente plutôt que de l'empiler
+    p.items = p.items.filter((it) => it.auto !== "num");
+    p.items.push({
+      id: nextId(), kind: "text", auto: "num",
+      text: `${i + 1} / ${S.pages.length}`,
+      x: viewW(p) / 2 - 18, y: viewH(p) - 34,
+      size: 10, color: "#444444", bold: false, w: 36, h: 13,
+    });
+  });
+  buildRail(); renderMain(); syncChrome();
+  toast(`${S.pages.length} page(s) numérotée(s).`);
+}
+
+function addWatermark() {
+  if (!S.pages.length) return;
+  const txt = prompt("Texte du filigrane :", "COPIE");
+  if (!txt) return;
+  snapshot();
+  S.pages.forEach((p) => {
+    p.items = p.items.filter((it) => it.auto !== "wm");
+    const size = Math.round(viewW(p) / 7);
+    const it = { id: nextId(), kind: "text", auto: "wm", text: txt,
+                 x: 0, y: 0, size, color: "#C8C8C8", bold: true };
+    measure(it);
+    it.x = Math.max(0, (viewW(p) - it.w) / 2);
+    it.y = Math.max(0, (viewH(p) - it.h) / 2);
+    p.items.push(it);
+  });
+  buildRail(); renderMain(); syncChrome();
+  toast("Filigrane ajouté sur toutes les pages.");
+}
+
+/* Titre et auteur voyagent avec le projet et sont écrits dans le PDF produit
+   par buildPdf(). Le nom du fichier, lui, reste celui de l'onglet. */
+function editMeta() {
+  const t = prompt("Titre du document :", S.meta?.title || stem());
+  if (t === null) return;
+  const a = prompt("Auteur :", S.meta?.author || "");
+  if (a === null) return;
+  S.meta = { title: t, author: a };
+  toast("Titre et auteur enregistrés.");
+}
+
+/* L'impression passe par le PDF réel, pas par une feuille de style : ce qui
+   sort de l'imprimante est alors exactement ce qui sortirait de l'export.
+   Tout reste local, l'URL d'objet ne quitte pas le navigateur. */
+async function printDoc() {
+  if (!S.pages.length) return;
+  busy(true, "Préparation de l'impression…");
+  let url;
+  try {
+    url = URL.createObjectURL(new Blob([await buildPdf(S.pages)], { type: "application/pdf" }));
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0;border:0";
+    f.src = url;
+    await new Promise((res, rej) => {
+      f.onload = res; f.onerror = rej;
+      document.body.appendChild(f);
+      setTimeout(res, 4000); // certains lecteurs n'émettent jamais l'événement
+    });
+    f.contentWindow.focus();
+    f.contentWindow.print();
+    // l'iframe doit survivre au dialogue d'impression, d'où le retrait différé
+    setTimeout(() => { f.remove(); URL.revokeObjectURL(url); }, 60000);
+  } catch (e) {
+    console.error(e); toast("L'impression a échoué.");
+    if (url) URL.revokeObjectURL(url);
   } finally { busy(false); }
 }
 
@@ -1842,6 +1977,8 @@ async function flattenPage(out, p) {
 
 async function buildPdf(pages) {
   const out = await PDFDocument.create();
+  if (S.meta?.title) out.setTitle(safeText(S.meta.title));
+  if (S.meta?.author) out.setAuthor(safeText(S.meta.author));
   const helv = await out.embedFont(StandardFonts.Helvetica);
   const bold = await out.embedFont(StandardFonts.HelveticaBold);
   const sources = new Map();
@@ -2143,7 +2280,8 @@ $("#export-pop").addEventListener("click", (e) => {
 /* -------------------------------------------------------------- chrome */
 function syncChrome() {
   const has = S.pages.length > 0;
-  ["btn-export", "btn-merge"].forEach((id) => ($("#" + id).disabled = !has));
+  ["btn-export", "btn-merge", "btn-dup", "btn-numbers", "btn-watermark", "btn-print"]
+    .forEach((id) => ($("#" + id).disabled = !has));
   $("#btn-undo").disabled = !S.undo.length;
   $("#btn-redo").disabled = !S.redo.length;
   $('[data-exp="sel"]').disabled = S.picked.size === 0;
@@ -2205,6 +2343,18 @@ $("#btn-newsig").addEventListener("click", openPad);
 
 $("#btn-rot-l").addEventListener("click", () => S.pages[S.cur] && rotatePage(S.pages[S.cur], -1));
 $("#btn-rot-r").addEventListener("click", () => S.pages[S.cur] && rotatePage(S.pages[S.cur], 1));
+$("#btn-dup").addEventListener("click", duplicatePage);
+$("#btn-blank").addEventListener("click", insertBlank);
+$("#btn-insert").addEventListener("click", () => $("#file-insert").click());
+$("#file-insert").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  // « ici » veut dire juste après la page affichée
+  if (f) loadPdf(f, true, S.pages.length ? S.cur + 1 : 0);
+});
+$("#btn-numbers").addEventListener("click", numberPages);
+$("#btn-watermark").addEventListener("click", addWatermark);
+$("#btn-meta").addEventListener("click", editMeta);
+$("#btn-print").addEventListener("click", printDoc);
 $("#btn-del").addEventListener("click", () => S.pages[S.cur] && removePages([S.pages[S.cur].uid]));
 $("#btn-del-sel").addEventListener("click", () => removePages([...S.picked]));
 $("#btn-all").addEventListener("click", () => { S.pages.forEach((p) => S.picked.add(p.uid)); buildRail(); syncChrome(); });
@@ -2242,6 +2392,7 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     e.shiftKey ? redo() : undo();
   }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p") { e.preventDefault(); printDoc(); }
 });
 
 /* Rien n'est enregistré côté serveur — par construction — et rien ne l'est non
