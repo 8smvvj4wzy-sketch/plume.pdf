@@ -683,6 +683,123 @@ async function testAnnuler() {
   await context.close();
 }
 
+/* ---------------------------------------------------------- 9. récents */
+
+async function testRecents() {
+  section("Récents");
+  const { context, page } = await openApp();
+  await loadFixture(page);
+
+  // écriture : on force l'enregistrement sans attendre le débounce
+  const ecrit = await page.evaluate(async () => {
+    S.pages[0].items = [{ id: "z", kind: "mask", x: 11, y: 22, w: 33, h: 44, color: "#FFFFFF" }];
+    S.pages[0].rot = 90;
+    await recSave(TABS[active].id);
+    const l = await recAll();
+    return { n: l.length, nom: l[0]?.name, vignette: !!l[0]?.thumb,
+             taille: l[0]?.size, pages: l[0]?.project.pages.length };
+  });
+  check("le document est conservé", ecrit.n === 1);
+  check(`son nom est retenu (${ecrit.nom})`, ecrit.nom === "essai.pdf");
+  check("une vignette est enregistrée", ecrit.vignette);
+  check(`la taille est notée (${ecrit.taille} octets)`, ecrit.taille > 0);
+  check("le projet contient les deux pages", ecrit.pages === 2);
+
+  // la liste s'affiche sur l'écran d'accueil
+  const affiche = await page.evaluate(async () => {
+    await drawRecents();
+    return { cache: document.querySelector("#recents").hidden,
+             lignes: document.querySelectorAll("#rec-list .rec").length,
+             titre: document.querySelector("#rec-list .rec b")?.textContent };
+  });
+  check("la section est visible", affiche.cache === false);
+  check(`une entrée est listée (${affiche.titre})`, affiche.lignes === 1);
+
+  /* Réouverture : c'est la propriété qui compte. Fermer l'onglet puis rouvrir
+     depuis la liste doit rendre le travail, pas seulement le fichier. */
+  const rouvre = await page.evaluate(async () => {
+    const id = (await recAll())[0].id;
+    closeTab(0);
+    const vide = TABS.length;
+    await recOpenEntry(id);
+    const p = S.pages[0];
+    return { vide, onglets: TABS.length, pages: S.pages.length, rot: p.rot,
+             items: p.items.length, x: p.items[0]?.x,
+             rendu: !document.querySelector("#sheet-wrap").hidden };
+  });
+  check("fermer l'onglet vide bien le projet", rouvre.vide === 0);
+  check("rouvrir depuis la liste recrée un onglet", rouvre.onglets === 1);
+  check("les pages sont revenues", rouvre.pages === 2);
+  check("la rotation est revenue", rouvre.rot === 90);
+  check("les annotations sont revenues", rouvre.items === 1 && rouvre.x === 11);
+  check("le document se réaffiche", rouvre.rendu);
+
+  // purge
+  const vide = await page.evaluate(async () => {
+    await recTx("readwrite", (st) => st.clear());
+    await drawRecents();
+    return { n: (await recAll()).length,
+             lignes: document.querySelectorAll("#rec-list .rec").length,
+             message: !document.querySelector("#rec-empty").hidden };
+  });
+  check("vider la liste efface tout", vide.n === 0 && vide.lignes === 0);
+  check("l'écran d'accueil le dit", vide.message);
+
+  // l'interrupteur : couper doit aussi effacer ce qui restait
+  const coupe = await page.evaluate(async () => {
+    await recSave(TABS[active].id);
+    const avant = (await recAll()).length;
+    const box = document.querySelector("#rec-off");
+    box.checked = true; box.dispatchEvent(new Event("change"));
+    await new Promise((r) => setTimeout(r, 150));
+    const apres = (await recAll()).length;
+    const actif = recEnabled();
+    await recSave(TABS[active].id);        // plus rien ne doit s'écrire
+    const encore = (await recAll()).length;
+    box.checked = false; box.dispatchEvent(new Event("change"));
+    return { avant, apres, actif, encore };
+  });
+  check("couper la conservation efface ce qui restait",
+    coupe.avant === 1 && coupe.apres === 0);
+  check("et rien ne s'écrit plus ensuite", coupe.actif === false && coupe.encore === 0);
+
+  await context.close();
+}
+
+/* Là où IndexedDB est refusé — Safari en file://, navigation privée — la
+   section doit disparaître au lieu d'afficher une liste éternellement vide,
+   et l'avertissement de fermeture doit reprendre du service. */
+async function testRecentsIndisponible() {
+  section("Récents indisponibles");
+  const context = await browser.newContext();
+  // l'accès est coupé avant tout script de la page
+  await context.addInitScript(() => {
+    Object.defineProperty(window, "indexedDB", {
+      get() { throw new DOMException("refusé", "SecurityError"); },
+    });
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.goto(pathToFileURL(APP).href);
+  await page.waitForFunction(() => typeof loadPdf === "function");
+  await new Promise((r) => setTimeout(r, 400));
+
+  const res = await page.evaluate(() => ({
+    cache: document.querySelector("#recents").hidden,
+    marche: typeof drawRecents === "function",
+  }));
+  check("la section des récents est masquée", res.cache === true);
+  check("l'application démarre malgré tout", res.marche);
+  check("aucune erreur JavaScript n'échappe", errors.length === 0, errors.join("\n      "));
+
+  await loadFixture(page);
+  const garde = await page.evaluate(() => ({ protege: !recEnabled(), pages: S.pages.length }));
+  check("l'avertissement de fermeture reste actif", garde.protege);
+  check("l'édition fonctionne normalement", garde.pages === 2);
+  await context.close();
+}
+
 /* ------------------------------------------------- 6. version autonome */
 
 async function testAutonome() {
@@ -713,6 +830,8 @@ const SUITE = [
   ["annotation", testAnnotation],
   ["recherche", testRecherche],
   ["pages", testPages],
+  ["recents", testRecents],
+  ["recents-ko", testRecentsIndisponible],
   ["annuler", testAnnuler],
   ["autonome", testAutonome],
 ];

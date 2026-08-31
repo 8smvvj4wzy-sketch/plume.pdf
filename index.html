@@ -155,6 +155,25 @@ main{flex:1;display:flex;min-height:0}
   border:2px dashed #B3B0A8;border-radius:12px;background:rgba(255,255,255,.4)
 }
 #empty h2{font-size:16px;margin:0 0 8px;color:#3C4245;font-weight:600}
+/* liste des documents conservés, sur le fond clair de l'écran d'accueil */
+#recents{margin-top:22px;border-top:1px solid #C3C0B8;padding-top:14px;text-align:left}
+#recents h3{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:#6E7478;margin:0 0 9px;font-weight:500
+}
+#rec-list{display:flex;flex-direction:column;gap:5px}
+.rec{
+  display:flex;align-items:center;gap:9px;padding:5px;width:100%;text-align:left;
+  border:1px solid #C9C6BF;background:#F7F6F3;border-radius:7px;color:var(--ink)
+}
+.rec:hover{background:#fff;border-color:var(--accent)}
+.rec img{width:30px;height:40px;object-fit:cover;background:#fff;border:1px solid #D8D5CE;flex:0 0 auto}
+.rec-t{display:flex;flex-direction:column;gap:1px;min-width:0}
+.rec-t b{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rec-t small{font-size:10px;color:#6E7478}
+.rec-note{font-size:10.5px;color:#6E7478;line-height:1.5;margin:9px 0 0}
+.rec-note label{display:inline-flex;align-items:center;gap:4px;margin-left:6px}
+.lnk{font-size:10.5px;color:var(--danger);text-decoration:underline;padding:0;margin-left:6px}
 #empty p{font-size:13px;line-height:1.5;margin:0 0 18px}
 
 /* objets posés sur la page */
@@ -315,6 +334,16 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
       <h2>Aucun document ouvert</h2>
       <p>Déposez un PDF ici, ou ouvrez-en un. Tout reste sur votre Mac : rien n'est envoyé sur Internet.</p>
       <button class="btn primary" id="btn-open-2">Ouvrir un PDF</button>
+
+      <div id="recents" hidden>
+        <h3>Reprendre</h3>
+        <div id="rec-list"></div>
+        <p class="rec-note" id="rec-empty">Les documents ouverts seront conservés ici, sur cet ordinateur, avec vos annotations.</p>
+        <p class="rec-note">Conservés sur cette machine uniquement, jamais envoyés.
+          <label><input type="checkbox" id="rec-off"> Ne rien conserver</label>
+          <button class="lnk" id="rec-clear" hidden>Vider la liste</button>
+        </p>
+      </div>
     </div>
     <div id="sheet-wrap" hidden>
       <canvas id="page-canvas"></canvas>
@@ -531,6 +560,7 @@ function pushSnapshot(snap) {
   if (S.undo.length > UNDO_MAX) S.undo.shift();
   S.redo.length = 0;   // une nouvelle action ferme la branche des rétablissements
   syncChrome();
+  recTouch();          // le travail en cours part vers « Récents »
 }
 // à appeler AVANT la mutation
 const snapshot = () => pushSnapshot(pageSnapshot());
@@ -542,6 +572,7 @@ function applySnapshot(snap) {
   S.picked = new Set(snap.picked);
   S.sel = null;
   buildRail(); renderMain(); syncChrome();
+  recTouch();
 }
 function undo() {
   if (!S.undo.length) return;
@@ -670,6 +701,7 @@ async function loadPdf(file, merge = false, at = null) {
     S.pages.splice(at ?? S.pages.length, 0, ...neuves);
     if (at !== null) S.cur = at;
     drawTabs(); buildRail(); await renderMain(); syncChrome();
+    recTouch();
     toast(merge ? `${doc.numPages} page(s) ajoutée(s)` : `${doc.numPages} page(s) chargée(s)`);
   } catch (e) {
     console.error(e);
@@ -888,7 +920,7 @@ async function renderMain() {
   const p = S.pages[S.cur];
   $("#empty").hidden = !!p;
   $("#sheet-wrap").hidden = !p;
-  if (!p) { syncChrome(); return; }
+  if (!p) { drawRecents(); syncChrome(); return; }
 
   const token = ++renderToken;
   const src = S.docs.get(p.docId);
@@ -1426,6 +1458,174 @@ function maskAllHits() {
   clearFind();
   buildRail(); renderMain(); syncChrome();
   toast(`${n} occurrence(s) caviardée(s). Le texte partira à l'export.`, 3600);
+}
+
+/* -------------------------------------------------------------- récents
+   Les documents ouverts sont conservés sur CETTE machine, dans IndexedDB —
+   cloisonné par origine, jamais transmis, jamais lisible par un autre site.
+   Rien ne part sur Internet, la promesse du programme tient toujours ; mais
+   c'est la première fois qu'un document survit à la fermeture de l'onglet, et
+   sur un poste partagé cela se décide. D'où l'interrupteur et le bouton de
+   purge, tous deux à portée de main plutôt qu'enfouis dans un réglage.
+
+   localStorage ne conviendrait pas : quelques mégaoctets, alors qu'un PDF
+   scanné en fait couramment vingt.
+
+   On enregistre les octets d'origine ET le projet — ordre des pages,
+   rotations, objets posés — pour rouvrir le travail, et pas seulement le
+   fichier. */
+const REC_DB = "plume", REC_STORE = "recents", REC_MAX = 10;
+const REC_BUDGET = 300e6;                    // au-delà, on évince les plus anciens
+const REC_OFF = "plume.recents.off";         // l'utilisateur a coupé la conservation
+let recDb = null, recBroken = false;
+
+const recEnabled = () => !recBroken && localStorage.getItem(REC_OFF) !== "1";
+
+/* IndexedDB est refusé dans certains contextes — Safari en file://, navigation
+   privée, réglages restrictifs. On le détecte une fois et la section disparaît
+   au lieu d'afficher une liste éternellement vide. */
+function recOpen() {
+  if (recDb) return Promise.resolve(recDb);
+  return new Promise((res, rej) => {
+    let rq;
+    try { rq = indexedDB.open(REC_DB, 1); } catch (e) { return rej(e); }
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains(REC_STORE)) {
+        db.createObjectStore(REC_STORE, { keyPath: "id" }).createIndex("opened", "opened");
+      }
+    };
+    rq.onsuccess = () => { recDb = rq.result; res(recDb); };
+    rq.onerror = () => rej(rq.error);
+    rq.onblocked = () => rej(new Error("bloqué"));
+  });
+}
+
+function recTx(mode, fn) {
+  return recOpen().then((db) => new Promise((res, rej) => {
+    const tx = db.transaction(REC_STORE, mode);
+    const rq = fn(tx.objectStore(REC_STORE));
+    tx.oncomplete = () => res(rq?.result);
+    tx.onerror = tx.onabort = () => rej(tx.error);
+  }));
+}
+
+const recAll = () => recTx("readonly", (st) => st.getAll())
+  .then((r) => (r || []).sort((a, b) => b.opened - a.opened));
+
+/* Éviction : d'abord ce qui dépasse REC_MAX, puis ce qui dépasse le budget,
+   du plus ancien au plus récent. */
+async function recTrim() {
+  const list = await recAll();
+  let total = list.reduce((s, r) => s + (r.size || 0), 0);
+  const morts = list.slice(REC_MAX);
+  for (const r of list.slice(0, REC_MAX).reverse()) {
+    if (total <= REC_BUDGET) break;
+    morts.push(r); total -= r.size || 0;
+  }
+  for (const r of morts) await recTx("readwrite", (st) => st.delete(r.id));
+}
+
+/* Le projet est sérialisable tel quel : les objets posés sont des données
+   simples, et une page ne retient de son document que l'identifiant et le
+   numéro de page. Les octets, eux, sont partagés par tous les onglets d'un
+   même fichier — on les range une fois par document. */
+function recProject() {
+  return {
+    name: S.name,
+    meta: S.meta,
+    cur: S.cur,
+    docs: [...S.docs.entries()].map(([id, d]) => [id, d.bytes]),
+    pages: S.pages.map((p) => ({ ...p, items: p.items.map((it) => ({ ...it })) })),
+  };
+}
+
+async function recSave(id) {
+  if (!recEnabled() || !S.pages.length) return;
+  try {
+    const proj = recProject();
+    const size = proj.docs.reduce((s, [, b]) => s + b.byteLength, 0);
+    // navigator.storage n'existe pas partout ; son absence n'empêche rien
+    const est = await navigator.storage?.estimate?.().catch(() => null);
+    if (est && est.quota && est.usage + size > est.quota * 0.9) { await recTrim(); }
+    const thumb = await recThumb();
+    await recTx("readwrite", (st) => st.put({
+      id, name: S.name, size, opened: Date.now(), thumb, project: proj,
+    }));
+    await recTrim();
+  } catch (e) {
+    // un quota atteint ou un magasin refusé ne doit jamais gêner l'édition
+    console.warn("récents : enregistrement impossible", e);
+  }
+}
+
+async function recThumb() {
+  const p = S.pages[0]; if (!p) return null;
+  try {
+    const c = await pageToCanvas(p, 180);
+    return c.toDataURL("image/jpeg", 0.7);
+  } catch { return null; }
+}
+
+// l'enregistrement suit les gestes, mais de loin : inutile d'écrire 20 Mo à
+// chaque point d'un tracé au stylo
+let recTimer;
+function recTouch() {
+  if (!recEnabled()) return;
+  const tab = TABS[active]; if (!tab) return;
+  clearTimeout(recTimer);
+  recTimer = setTimeout(() => recSave(tab.id), 2000);
+}
+
+async function recOpenEntry(id) {
+  const r = await recTx("readonly", (st) => st.get(id));
+  if (!r) { toast("Ce document n'est plus disponible."); return; }
+  busy(true, "Réouverture…");
+  try {
+    const t = { id: "t" + Date.now(), state: newState(r.project.name) };
+    TABS.push(t); active = TABS.length - 1; S = t.state;
+    for (const [docId, bytes] of r.project.docs) {
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      S.docs.set(docId, { bytes: u8, pdfjs: await pdfjsLib.getDocument({ data: u8.slice(0) }).promise });
+    }
+    S.pages = r.project.pages;
+    S.cur = Math.min(r.project.cur || 0, S.pages.length - 1);
+    S.meta = r.project.meta || null;
+    drawTabs(); buildRail(); await renderMain(); syncChrome();
+    toast("Document rouvert avec vos annotations.");
+  } catch (e) { console.error(e); toast("La réouverture a échoué."); }
+  finally { busy(false); }
+}
+
+async function drawRecents() {
+  const box = $("#recents");
+  if (!recEnabled()) { box.hidden = true; return; }
+  let list = [];
+  try { list = await recAll(); }
+  catch { recBroken = true; box.hidden = true; return; }
+  box.hidden = false;
+  $("#rec-list").innerHTML = "";
+  $("#rec-empty").hidden = list.length > 0;
+  $("#rec-clear").hidden = list.length === 0;
+  for (const r of list) {
+    const el = document.createElement("button");
+    el.className = "rec";
+    el.innerHTML = `<img alt="">
+      <span class="rec-t"><b></b><small></small></span>`;
+    if (r.thumb) $("img", el).src = r.thumb;
+    $("b", el).textContent = r.name;
+    $("small", el).textContent =
+      `${new Date(r.opened).toLocaleDateString("fr-FR")} · ${(r.size / 1e6).toFixed(1)} Mo`;
+    el.addEventListener("click", () => recOpenEntry(r.id));
+    $("#rec-list").appendChild(el);
+  }
+}
+
+async function recClear() {
+  if (!confirm("Effacer tous les documents conservés sur cet ordinateur ?")) return;
+  try { await recTx("readwrite", (st) => st.clear()); } catch (e) { console.warn(e); }
+  drawRecents();
+  toast("Liste vidée.");
 }
 
 /* ---------------------------------------------------------- signatures */
@@ -2395,11 +2595,11 @@ window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p") { e.preventDefault(); printDoc(); }
 });
 
-/* Rien n'est enregistré côté serveur — par construction — et rien ne l'est non
-   plus sur cette machine tant que « Récents » ne prend pas le relais : fermer
-   l'onglet perdait tout le travail sans un mot. */
+/* Quand « Récents » conserve le travail, fermer l'onglet ne perd rien et
+   l'avertissement serait du bruit. Sans lui — coupé par l'utilisateur, ou
+   IndexedDB refusé par le navigateur — tout serait perdu sans un mot. */
 window.addEventListener("beforeunload", (e) => {
-  if (TABS.some((t) => t.state.pages.length)) e.preventDefault();
+  if (!recEnabled() && TABS.some((t) => t.state.pages.length)) e.preventDefault();
 });
 
 /* glisser-déposer d'un PDF sur la fenêtre */
@@ -2410,9 +2610,20 @@ window.addEventListener("drop", (e) => {
   if (f) loadPdf(f, S.pages.length > 0 && e.shiftKey);
 });
 
+$("#rec-off").checked = localStorage.getItem(REC_OFF) === "1";
+$("#rec-off").addEventListener("change", (e) => {
+  localStorage.setItem(REC_OFF, e.target.checked ? "1" : "0");
+  // couper la conservation efface aussi ce qui était déjà là : laisser des
+  // documents derrière soi contredirait ce que la case promet
+  if (e.target.checked) recTx("readwrite", (st) => st.clear()).catch(() => {});
+  drawRecents();
+});
+$("#rec-clear").addEventListener("click", recClear);
+
 loadSigs();
 drawTabs();
 syncChrome();
+drawRecents();
 
 // installe l'app hors connexion une fois ouverte depuis le web ; sur la
 // version autonome ouverte en file://, ce garde-fou évite une erreur inutile
