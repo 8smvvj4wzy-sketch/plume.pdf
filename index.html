@@ -330,7 +330,17 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
         <button class="tool" data-tool="text">Texte<small>cliquer pour saisir</small></button>
         <button class="tool" data-tool="mask">Caviarder<small>le texte est supprimé</small></button>
         <button class="tool" data-tool="image">Image<small>logo, tampon</small></button>
+        <button class="tool" data-tool="pen">Stylo<small>écrire à main levée</small></button>
+        <button class="tool" data-tool="highlight">Surligner<small>tracer une bande</small></button>
+        <button class="tool" data-tool="rect">Rectangle<small>encadrer</small></button>
+        <button class="tool" data-tool="arrow">Flèche<small>désigner</small></button>
       </div>
+    </div>
+
+    <div class="sec" id="draw-props">
+      <h3>Tracé</h3>
+      <div class="row"><label for="dcolor">Couleur</label><input type="color" id="dcolor" value="#C81E1E"></div>
+      <div class="row"><label for="dwidth">Épaisseur</label><input type="number" id="dwidth" value="2" min="1" max="24" step="1"></div>
     </div>
 
     <div class="sec">
@@ -567,7 +577,12 @@ function viewToPdf(p, x, y) {
 // rotation d'une page : on transporte les objets pour qu'ils suivent l'image
 function turnItems(p, dir) {
   const vw = viewW(p), vh = viewH(p);
+  // un point de l'affichage courant vers celui d'après rotation
+  const tourne = ([x, y]) => (dir > 0 ? [vh - y, x] : [y, vw - x]);
   for (const it of p.items) {
+    // un tracé n'a pas de coin : chaque point suit la même règle que les
+    // coins d'une boîte, et rien n'est à échanger puisqu'il n'a ni w ni h
+    if (isPath(it)) { it.pts = it.pts.map(tourne); continue; }
     const w = it.w || 0, h = it.h || 0;
     if (dir > 0) { const nx = vh - (it.y + h); it.y = it.x; it.x = nx; }
     else         { const ny = vw - (it.x + w); it.x = it.y; it.y = ny; }
@@ -791,6 +806,96 @@ function removePages(uids) {
 }
 
 /* --------------------------------------------------------- objets posés */
+/* ---------------------------------------------------------- annotations
+   Quatre types s'ajoutent aux trois d'origine :
+
+     ink       { pts:[[x,y],…], color, width }   tracé à main levée
+     arrow     { pts:[[x0,y0],[x1,y1]], … }      deux points, donc même
+                                                 transport que ink à la rotation
+     highlight { x, y, w, h, color }             bande translucide
+     rect      { x, y, w, h, color, width }      cadre
+
+   Les tracés (ink, arrow) sont décrits par leurs points, pas par une boîte :
+   une seule règle de rotation les couvre tous les deux, et le trait garde sa
+   forme exacte. Ils n'ont pas de poignée de redimensionnement — on les efface
+   et on les refait, ce qui est plus rapide que de les étirer. */
+const isPath = (it) => it.kind === "ink" || it.kind === "arrow";
+const isDrawn = (it) => isPath(it) || it.kind === "rect" || it.kind === "highlight";
+
+// enveloppe en points, marge comprise pour l'épaisseur du trait
+function bbox(it) {
+  const m = isPath(it) || it.kind === "rect" ? (it.width || 1) / 2 + 1 : 0;
+  if (isPath(it)) {
+    const xs = it.pts.map((q) => q[0]), ys = it.pts.map((q) => q[1]);
+    const x = Math.min(...xs) - m, y = Math.min(...ys) - m;
+    // la pointe d'une flèche déborde de la ligne : on lui laisse la place
+    const t = it.kind === "arrow" ? (it.width || 1) * 3 : 0;
+    return { x: x - t, y: y - t,
+             w: Math.max(...xs) - x + m + 2 * t, h: Math.max(...ys) - y + m + 2 * t };
+  }
+  return { x: it.x - m, y: it.y - m, w: it.w + 2 * m, h: it.h + 2 * m };
+}
+
+// pointe de flèche : deux segments partant de l'extrémité, à 25° de l'axe
+function arrowHead(p0, p1, width) {
+  const a = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]);
+  const L = Math.max(6, width * 3.2), o = 0.44;
+  return [
+    [p1[0] - L * Math.cos(a - o), p1[1] - L * Math.sin(a - o)],
+    [p1[0] - L * Math.cos(a + o), p1[1] - L * Math.sin(a + o)],
+  ];
+}
+
+/* Le SVG est décrit dans le repère de la page (en points) et cadré sur
+   l'enveloppe de l'objet : l'affichage suit alors S.scale sans recalcul, et
+   le trait reste net à tous les zooms. */
+function drawnSvg(it) {
+  const b = bbox(it);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `${b.x} ${b.y} ${b.w} ${b.h}`);
+  svg.setAttribute("width", "100%"); svg.setAttribute("height", "100%");
+  svg.style.display = "block"; svg.style.overflow = "visible";
+
+  const trait = (d) => {
+    const el = document.createElementNS(ns, "path");
+    el.setAttribute("d", d);
+    el.setAttribute("fill", "none");
+    el.setAttribute("stroke", it.color);
+    el.setAttribute("stroke-width", it.width || 2);
+    el.setAttribute("stroke-linecap", "round");
+    el.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(el);
+    return el;
+  };
+
+  if (it.kind === "ink") {
+    trait(it.pts.map((q, i) => (i ? "L" : "M") + q[0] + " " + q[1]).join(" "));
+  } else if (it.kind === "arrow") {
+    const [p0, p1] = it.pts;
+    trait(`M${p0[0]} ${p0[1]} L${p1[0]} ${p1[1]}`);
+    const [a, c] = arrowHead(p0, p1, it.width || 2);
+    trait(`M${a[0]} ${a[1]} L${p1[0]} ${p1[1]} L${c[0]} ${c[1]}`);
+  } else if (it.kind === "rect") {
+    const r = document.createElementNS(ns, "rect");
+    r.setAttribute("x", it.x); r.setAttribute("y", it.y);
+    r.setAttribute("width", it.w); r.setAttribute("height", it.h);
+    r.setAttribute("fill", "none");
+    r.setAttribute("stroke", it.color);
+    r.setAttribute("stroke-width", it.width || 2);
+    svg.appendChild(r);
+  } else { // highlight
+    const r = document.createElementNS(ns, "rect");
+    r.setAttribute("x", it.x); r.setAttribute("y", it.y);
+    r.setAttribute("width", it.w); r.setAttribute("height", it.h);
+    r.setAttribute("fill", it.color);
+    r.setAttribute("fill-opacity", HL_OPACITY);
+    svg.appendChild(r);
+  }
+  return svg;
+}
+const HL_OPACITY = 0.35;
+
 function paintItems() {
   const ov = $("#overlay");
   ov.querySelectorAll(".item, .hit").forEach((n) => n.remove());
@@ -811,10 +916,15 @@ function paintItems() {
     const el = document.createElement("div");
     el.className = "item" + (S.sel === it.id ? " sel" : "");
     el.dataset.id = it.id;
-    el.style.left = it.x * s + "px";
-    el.style.top = it.y * s + "px";
+    const b = isDrawn(it) ? bbox(it) : it;
+    el.style.left = b.x * s + "px";
+    el.style.top = b.y * s + "px";
 
-    if (it.kind === "text") {
+    if (isDrawn(it)) {
+      el.style.width = b.w * s + "px";
+      el.style.height = b.h * s + "px";
+      el.appendChild(drawnSvg(it));
+    } else if (it.kind === "text") {
       const t = document.createElement("div");
       t.className = "txt";
       t.textContent = it.text;
@@ -843,7 +953,9 @@ function paintItems() {
     });
     el.appendChild(kill);
 
-    if (it.kind !== "text") {
+    // pas de poignée sur un texte (sa taille vient du corps) ni sur un tracé
+    // (l'étirer déformerait le trait ; on l'efface et on le refait)
+    if (it.kind !== "text" && !isPath(it)) {
       const g = document.createElement("div"); g.className = "grip";
       g.addEventListener("pointerdown", (e) => startResize(e, it, el));
       el.appendChild(g);
@@ -864,18 +976,27 @@ function startMove(e, it, el) {
   e.preventDefault();
   S.sel = it.id;
   $("#overlay").querySelectorAll(".item").forEach((n) => n.classList.toggle("sel", n === el));
-  const s = S.scale, x0 = e.clientX, y0 = e.clientY, ix = it.x, iy = it.y;
+  const s = S.scale, x0 = e.clientX, y0 = e.clientY;
+  // un tracé n'a pas de coin : on déplace tous ses points, en se repérant sur
+  // l'enveloppe pour l'empêcher de sortir par le haut ou par la gauche
+  const b0 = isDrawn(it) ? bbox(it) : null;
+  const ix = isPath(it) ? b0.x : it.x, iy = isPath(it) ? b0.y : it.y;
+  const pts0 = isPath(it) ? it.pts.map((q) => [...q]) : null;
   // l'instantané est pris avant le geste mais empilé seulement s'il a servi :
   // un simple clic de sélection ne doit pas remplir la pile d'annulation
   const avant = pageSnapshot();
+  let dx = 0, dy = 0;
   const move = (ev) => {
-    it.x = Math.max(0, ix + (ev.clientX - x0) / s);
-    it.y = Math.max(0, iy + (ev.clientY - y0) / s);
-    el.style.left = it.x * s + "px"; el.style.top = it.y * s + "px";
+    dx = Math.max(-ix, (ev.clientX - x0) / s);
+    dy = Math.max(-iy, (ev.clientY - y0) / s);
+    if (pts0) it.pts = pts0.map((q) => [q[0] + dx, q[1] + dy]);
+    else { it.x = ix + dx; it.y = iy + dy; }
+    const b = isDrawn(it) ? bbox(it) : it;
+    el.style.left = b.x * s + "px"; el.style.top = b.y * s + "px";
   };
   const up = () => {
     window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
-    if (it.x !== ix || it.y !== iy) pushSnapshot(avant);
+    if (dx || dy) pushSnapshot(avant);
   };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
 }
@@ -967,6 +1088,74 @@ $("#overlay").addEventListener("pointerdown", (e) => {
     const el = $(`.item[data-id="${it.id}"]`); if (el) editText(el, it, true);
     return;
   }
+  // stylo : on collecte les points et on redessine le seul objet concerné,
+  // pas tout le calque, pour que le trait suive le curseur sans saccade
+  if (TOOL === "pen") {
+    const it = { id: nextId(), kind: "ink", pts: [[x, y]],
+                 color: $("#dcolor").value, width: +$("#dwidth").value || 2 };
+    snapshot();
+    p.items.push(it); S.sel = it.id; paintItems();
+    let el = $(`.item[data-id="${it.id}"]`);
+    const move = (ev) => {
+      const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
+      const d = it.pts[it.pts.length - 1];
+      if (Math.hypot(cx - d[0], cy - d[1]) < 0.7) return; // filtre le bruit du capteur
+      it.pts.push([cx, cy]);
+      const b = bbox(it);
+      el.style.left = b.x * S.scale + "px"; el.style.top = b.y * S.scale + "px";
+      el.style.width = b.w * S.scale + "px"; el.style.height = b.h * S.scale + "px";
+      el.querySelector("svg")?.remove();
+      el.appendChild(drawnSvg(it));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      // un simple clic ne laisse pas de trait : on retire l'objet vide
+      if (it.pts.length < 2) { p.items = p.items.filter((z) => z !== it); S.undo.pop(); }
+      paintItems(); syncChrome();
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    return;
+  }
+
+  // surligneur, rectangle et flèche : un glisser d'un point à l'autre
+  if (TOOL === "highlight" || TOOL === "rect" || TOOL === "arrow") {
+    const band = $("#band");
+    band.style.display = "block";
+    band.style.left = x * S.scale + "px"; band.style.top = y * S.scale + "px";
+    band.style.width = band.style.height = "0px";
+    const move = (ev) => {
+      const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
+      band.style.left = Math.min(x, cx) * S.scale + "px";
+      band.style.top = Math.min(y, cy) * S.scale + "px";
+      band.style.width = Math.abs(cx - x) * S.scale + "px";
+      band.style.height = Math.abs(cy - y) * S.scale + "px";
+    };
+    const up = (ev) => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      band.style.display = "none";
+      const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
+      const color = $("#dcolor").value, width = +$("#dwidth").value || 2;
+      if (TOOL === "arrow") {
+        if (Math.hypot(cx - x, cy - y) < 6) return;
+        snapshot();
+        // la flèche garde le sens du geste : elle pointe là où on relâche
+        p.items.push({ id: nextId(), kind: "arrow", pts: [[x, y], [cx, cy]], color, width });
+      } else {
+        const w = Math.abs(cx - x), h = Math.abs(cy - y);
+        if (w < 4 || h < 4) return;
+        snapshot();
+        p.items.push(TOOL === "highlight"
+          // le surligneur va au jaune, quelle que soit la couleur de tracé :
+          // c'est une bande translucide, pas un trait
+          ? { id: nextId(), kind: "highlight", x: Math.min(x, cx), y: Math.min(y, cy), w, h, color: "#FFE24A" }
+          : { id: nextId(), kind: "rect", x: Math.min(x, cx), y: Math.min(y, cy), w, h, color, width });
+      }
+      paintItems(); syncChrome();
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    return;
+  }
+
   if (TOOL === "mask") {
     const band = $("#band");
     band.style.display = "block";
@@ -1669,7 +1858,32 @@ async function buildPdf(pages) {
     const rot = degrees(p.rot);
 
     for (const it of p.items) {
-      if (it.kind === "mask") {
+      if (isPath(it)) {
+        /* Un tracé est défini par ses points : les convertir un à un suffit,
+           et il n'y a pas d'orientation à compenser comme pour un texte ou une
+           image — la forme est déjà décrite dans l'espace d'arrivée. */
+        const q = it.pts.map(([x, y]) => { const o = viewToPdf(p, x, y); return [o.x, o.y]; });
+        const seg = (a, b) => page.drawLine({
+          start: { x: a[0], y: a[1] }, end: { x: b[0], y: b[1] },
+          thickness: it.width || 2, color: hexRgb(it.color), lineCap: 1,
+        });
+        for (let i = 1; i < q.length; i++) seg(q[i - 1], q[i]);
+        if (it.kind === "arrow" && q.length === 2) {
+          for (const t of arrowHead(q[0], q[1], it.width || 2)) seg(t, q[1]);
+        }
+      } else if (it.kind === "highlight") {
+        const o = viewToPdf(p, it.x, it.y + it.h);
+        page.drawRectangle({
+          x: o.x, y: o.y, width: it.w, height: it.h,
+          color: hexRgb(it.color), opacity: HL_OPACITY, rotate: rot,
+        });
+      } else if (it.kind === "rect") {
+        const o = viewToPdf(p, it.x, it.y + it.h);
+        page.drawRectangle({
+          x: o.x, y: o.y, width: it.w, height: it.h,
+          borderColor: hexRgb(it.color), borderWidth: it.width || 2, rotate: rot,
+        });
+      } else if (it.kind === "mask") {
         const o = viewToPdf(p, it.x, it.y + it.h);
         page.drawRectangle({ x: o.x, y: o.y, width: it.w, height: it.h, color: hexRgb(it.color), rotate: rot });
       } else if (it.kind === "text") {
@@ -1736,7 +1950,31 @@ async function pageToCanvas(p, targetW = 1500) {
   await pg.render({ canvasContext: ctx, viewport: vp }).promise;
   // les objets ajoutés sont dessinés par-dessus, aux mêmes proportions
   for (const it of p.items) {
-    if (it.kind === "mask") {
+    if (isPath(it)) {
+      ctx.strokeStyle = it.color;
+      ctx.lineWidth = (it.width || 2) * scale;
+      ctx.lineCap = ctx.lineJoin = "round";
+      const trace = (q) => {
+        ctx.beginPath();
+        q.forEach(([x, y], i) => ctx[i ? "lineTo" : "moveTo"](x * scale, y * scale));
+        ctx.stroke();
+      };
+      trace(it.pts);
+      if (it.kind === "arrow") {
+        const [a, c] = arrowHead(it.pts[0], it.pts[1], it.width || 2);
+        trace([a, it.pts[1], c]);
+      }
+    } else if (it.kind === "highlight") {
+      ctx.save();
+      ctx.globalAlpha = HL_OPACITY;
+      ctx.fillStyle = it.color;
+      ctx.fillRect(it.x * scale, it.y * scale, it.w * scale, it.h * scale);
+      ctx.restore();
+    } else if (it.kind === "rect") {
+      ctx.strokeStyle = it.color;
+      ctx.lineWidth = (it.width || 2) * scale;
+      ctx.strokeRect(it.x * scale, it.y * scale, it.w * scale, it.h * scale);
+    } else if (it.kind === "mask") {
       ctx.fillStyle = it.color;
       ctx.fillRect(it.x * scale, it.y * scale, it.w * scale, it.h * scale);
     } else if (it.kind === "text") {

@@ -343,7 +343,109 @@ async function testCaviardage() {
   await context.close();
 }
 
-/* -------------------------------------------------------- 6. recherche */
+/* ------------------------------------------------------ 6. annotation */
+
+/* Une annotation doit traverser les quatre chemins de sortie : l'écran
+   (paintItems), le PDF (buildPdf), et le canvas (pageToCanvas, qui sert aux
+   exports PNG et Word et aux pages aplaties). En oublier un donne un trait
+   qui s'affiche puis disparaît à l'export — d'où un contrôle par chemin. */
+async function testAnnotation() {
+  section("Annotation");
+  const { context, page } = await openApp();
+  await loadFixture(page);
+
+  const KINDS = ["ink", "arrow", "rect", "highlight"];
+
+  // 1. l'invariant de rotation, étendu aux nouveaux types
+  const inv = await page.evaluate((KINDS) => {
+    const p = S.pages[0];
+    p.rot = 0;
+    p.items = [
+      { id: "i", kind: "ink", pts: [[40, 50], [90, 70], [120, 40]], color: "#C81E1E", width: 2 },
+      { id: "f", kind: "arrow", pts: [[200, 300], [280, 360]], color: "#C81E1E", width: 3 },
+      { id: "r", kind: "rect", x: 60, y: 400, w: 120, h: 40, color: "#C81E1E", width: 2 },
+      { id: "s", kind: "highlight", x: 70, y: 500, w: 200, h: 18, color: "#FFE24A" },
+    ];
+    const avant = JSON.stringify(p.items);
+    for (let i = 0; i < 4; i++) { turnItems(p, 1); p.rot = (p.rot + 90) % 360; }
+    const apres = JSON.stringify(p.items);
+    // et les tracés doivent rester dans la page à chaque quart de tour
+    let dedans = true;
+    for (let i = 0; i < 4; i++) {
+      turnItems(p, 1); p.rot = (p.rot + 90) % 360;
+      for (const it of p.items) {
+        const b = bbox(it);
+        if (b.x < -12 || b.y < -12 || b.x + b.w > viewW(p) + 12 || b.y + b.h > viewH(p) + 12) dedans = false;
+      }
+    }
+    return { avant, apres, dedans, kinds: p.items.map((i) => i.kind) };
+  }, KINDS);
+
+  check("les quatre types sont couverts", KINDS.every((k) => inv.kinds.includes(k)));
+  check("4 × turnItems rend les annotations identiques", inv.avant === inv.apres,
+    inv.avant === inv.apres ? "" : `avant ${inv.avant}\n      après ${inv.apres}`);
+  check("elles restent dans la page à chaque quart de tour", inv.dedans);
+
+  /* 2. les trois chemins de sortie, sur les quatre rotations.
+
+     Le point sondé est volontairement DÉCENTRÉ dans les deux axes : un trait
+     posé au milieu passerait le test même si l'export le retournait, puisque
+     le centre est invariant. Ici, une annotation mal placée tombe sur du
+     papier blanc et le contrôle échoue. */
+  for (const rot of [0, 90, 180, 270]) {
+    for (const kind of KINDS) {
+      const res = await page.evaluate(async ({ rot, kind }) => {
+        const p = S.pages[0];
+        p.rot = rot;
+        // repère asymétrique : ni au centre, ni sur une médiane
+        const px = viewW(p) * 0.28, py = viewH(p) * 0.17;
+        const col = "#FF0000", w = 10;
+        p.items = [{
+          ink:       { id: "a", kind: "ink", color: col, width: w, pts: [[px - 60, py], [px + 60, py]] },
+          arrow:     { id: "a", kind: "arrow", color: col, width: w, pts: [[px - 60, py], [px + 60, py]] },
+          // le bord supérieur du cadre passe exactement par le point sondé
+          rect:      { id: "a", kind: "rect", color: col, width: w, x: px - 60, y: py, w: 120, h: 90 },
+          highlight: { id: "a", kind: "highlight", color: col, x: px - 60, y: py - 12, w: 120, h: 24 },
+        }[kind]];
+
+        // (a) écran
+        S.cur = 0; paintItems();
+        const surEcran = document.querySelectorAll("#overlay .item svg").length;
+
+        // (b) canvas — celui des exports PNG, Word et des pages aplaties
+        const c = await pageToCanvas(p, 1400);
+        const k = c.width / viewW(p);
+        const d = c.getContext("2d").getImageData(Math.round(px * k), Math.round(py * k), 1, 1).data;
+
+        // (c) PDF : on rouvre le fichier produit et on le rend
+        const bytes = await buildPdf([p]);
+        const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+        const pg = await doc.getPage(1);
+        const vp = pg.getViewport({ scale: 1 });
+        const c2 = document.createElement("canvas");
+        c2.width = Math.round(vp.width); c2.height = Math.round(vp.height);
+        const x2 = c2.getContext("2d");
+        x2.fillStyle = "#fff"; x2.fillRect(0, 0, c2.width, c2.height);
+        await pg.render({ canvasContext: x2, viewport: vp }).promise;
+        // le viewport du relecteur applique la rotation de la page : le point
+        // sondé retombe donc aux mêmes coordonnées affichées qu'à l'écran
+        const d2 = x2.getImageData(Math.round(px), Math.round(py), 1, 1).data;
+
+        return { surEcran, canvas: [...d].slice(0, 3), pdf: [...d2].slice(0, 3) };
+      }, { rot, kind });
+
+      // le surligneur est translucide : sa trace est rose, pas rouge franc
+      const marque = (c) => c[0] > 150 && c[1] < (kind === "highlight" ? 210 : 110)
+                                       && c[2] < (kind === "highlight" ? 210 : 110);
+      check(`rot ${rot}° ${kind} — dessiné à l'écran`, res.surEcran > 0);
+      check(`rot ${rot}° ${kind} — présent dans le canvas (${res.canvas})`, marque(res.canvas));
+      check(`rot ${rot}° ${kind} — présent dans le PDF exporté (${res.pdf})`, marque(res.pdf));
+    }
+  }
+  await context.close();
+}
+
+/* -------------------------------------------------------- 7. recherche */
 
 /* Le jeu d'essai porte le marqueur deux fois par page, sur deux pages : la
    recherche doit en trouver quatre, et « caviarder toutes les occurrences »
@@ -525,6 +627,7 @@ const SUITE = [
   ["rotation", testInvariantRotation],
   ["rendu", testRendu],
   ["caviardage", testCaviardage],
+  ["annotation", testAnnotation],
   ["recherche", testRecherche],
   ["annuler", testAnnuler],
   ["autonome", testAutonome],
