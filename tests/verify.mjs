@@ -259,7 +259,91 @@ async function testRendu() {
   await context.close();
 }
 
-/* ------------------------------------------------ 5. annuler / rétablir */
+/* ------------------------------------------------------ 5. caviardage */
+
+/* La propriété qui compte : après export, le texte recouvert n'est plus
+   extractible du fichier. Et son corollaire, qu'on ne paie l'aplatissement que
+   là où il protège quelque chose — une page sans cache garde son texte. */
+async function testCaviardage() {
+  section("Caviardage");
+  const { context, page } = await openApp();
+  await loadFixture(page, "SECRETABSOLU");
+
+  for (const rot of [0, 90, 180, 270]) {
+    const res = await page.evaluate(async (rot) => {
+      // la page 1 est caviardée, la page 2 ne l'est pas
+      const p1 = S.pages[0], p2 = S.pages[1];
+      p1.rot = rot; p2.rot = rot;
+      // un cache large, qui couvre sûrement les deux lignes de la page
+      p1.items = [{ id: "m", kind: "mask", x: 0, y: 0,
+                    w: viewW(p1), h: viewH(p1), color: "#FFFFFF" }];
+      p2.items = [];
+      const bytes = await buildPdf([p1, p2]);
+
+      const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+      const texte = async (n) => (await (await doc.getPage(n)).getTextContent())
+        .items.map((i) => i.str).join(" ");
+      return { p1: await texte(1), p2: await texte(2), taille: bytes.length };
+    }, rot);
+
+    check(`rot ${rot}° — le texte caviardé a disparu du fichier`,
+      !res.p1.includes("SECRETABSOLU"), "extrait : " + JSON.stringify(res.p1.slice(0, 80)));
+    check(`rot ${rot}° — la page sans cache garde son texte`,
+      res.p2.includes("SECRETABSOLU"), "extrait : " + JSON.stringify(res.p2.slice(0, 80)));
+  }
+
+  /* Le texte disparaît aussi si la page aplatie sort blanche ou de travers.
+     On rouvre donc le PDF produit et on compare son rendu à ce que l'écran
+     montrait : mêmes dimensions, cache blanc au bon endroit, et le reste du
+     contenu toujours là. */
+  for (const rot of [0, 90, 270]) {
+    const res = await page.evaluate(async (rot) => {
+      const p = S.pages[0];
+      p.rot = rot;
+      // un cache étroit sur la seule ligne du haut ; celle du milieu doit rester
+      p.items = [{ id: "m", kind: "mask", x: 60, y: 80, w: 220, h: 30, color: "#FFFFFF" }];
+      const bytes = await buildPdf([p]);
+
+      const doc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+      const pg = await doc.getPage(1);
+      const vp = pg.getViewport({ scale: 1 });
+      const c = document.createElement("canvas");
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+
+      // combien de pixels sombres dans la bande du cache, et dans celle d'en bas
+      const sombres = (x, y, w, h) => {
+        const d = ctx.getImageData(x, y, w, h).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] < 128) n++;
+        return n;
+      };
+      return {
+        larg: vp.width, haut: vp.height,
+        attLarg: viewW(p), attHaut: viewH(p),
+        // la page aplatie est droite et aux dimensions affichées : le rectangle
+        // du cache s'y lit tel quel, sans conversion
+        dansCache: sombres(60, 80, 220, 30),
+        // le texte se déplace avec la rotation ; on ne cherche donc pas une
+        // ligne précise, seulement qu'il reste de l'encre quelque part
+        total: sombres(0, 0, c.width, c.height),
+      };
+    }, rot);
+
+    check(`rot ${rot}° — la page aplatie a les dimensions affichées (${res.larg}×${res.haut})`,
+      near(res.larg, res.attLarg, 2) && near(res.haut, res.attHaut, 2),
+      `attendu ${res.attLarg}×${res.attHaut}`);
+    check(`rot ${rot}° — la zone caviardée est vide (${res.dansCache} px sombres)`,
+      res.dansCache === 0);
+    check(`rot ${rot}° — la page n'est pas sortie blanche (${res.total} px sombres)`,
+      res.total > 100);
+  }
+  await context.close();
+}
+
+/* ------------------------------------------------ 6. annuler / rétablir */
 
 /* Enchaîne des gestes de natures différentes, puis affirme qu'une empreinte
    de l'état revient à l'identique après N annulations, et de nouveau après N
@@ -352,6 +436,7 @@ const SUITE = [
   ["coordonnees", testCoordonnees],
   ["rotation", testInvariantRotation],
   ["rendu", testRendu],
+  ["caviardage", testCaviardage],
   ["annuler", testAnnuler],
   ["autonome", testAutonome],
 ];

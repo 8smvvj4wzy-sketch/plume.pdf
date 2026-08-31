@@ -325,7 +325,7 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
       <div class="tools-grid">
         <button class="tool on" data-tool="select">Sélection<small>déplacer, éditer</small></button>
         <button class="tool" data-tool="text">Texte<small>cliquer pour saisir</small></button>
-        <button class="tool" data-tool="mask">Masquer<small>tracer un cache</small></button>
+        <button class="tool" data-tool="mask">Caviarder<small>le texte est supprimé</small></button>
         <button class="tool" data-tool="image">Image<small>logo, tampon</small></button>
       </div>
     </div>
@@ -1489,17 +1489,41 @@ $("#imp-save").addEventListener("click", () => {
 });
 
 /* -------------------------------------------------------------- export */
+
+/* Un cache est un rectangle posé PAR-DESSUS la page : le texte qu'il recouvre
+   reste dans le PDF et se copie encore. Pour que « masquer » veuille bien dire
+   masquer, une page portant un cache est rendue en image — caches compris —
+   puis réintégrée : ce qui était dessous n'existe plus dans le fichier produit.
+
+   Les autres pages sont recopiées telles quelles et gardent leur texte
+   sélectionnable et recherchable ; on ne paie l'aplatissement que là où il
+   protège quelque chose. */
+const hasMask = (p) => p.items.some((it) => it.kind === "mask");
+const FLATTEN_W = 2200;   // ≈190 ppp sur une A4 : lisible sans alourdir démesurément
+
+async function flattenPage(out, p) {
+  const c = await pageToCanvas(p, FLATTEN_W);
+  const jpg = await out.embedJpg(c.toDataURL("image/jpeg", 0.92));
+  // pageToCanvas a déjà rendu la page avec `rotation: p.rot` et dessiné les
+  // objets par-dessus : la rotation est cuite dans l'image et les objets y
+  // sont. La page produite est donc droite, aux dimensions AFFICHÉES, et ne
+  // reçoit ni setRotation() ni un second dessin des objets.
+  const page = out.addPage([viewW(p), viewH(p)]);
+  page.drawImage(jpg, { x: 0, y: 0, width: viewW(p), height: viewH(p) });
+}
+
 async function buildPdf(pages) {
   const out = await PDFDocument.create();
   const helv = await out.embedFont(StandardFonts.Helvetica);
   const bold = await out.embedFont(StandardFonts.HelveticaBold);
   const sources = new Map();
   for (const p of pages) {
-    if (!sources.has(p.docId)) {
+    if (!sources.has(p.docId) && !hasMask(p)) {
       sources.set(p.docId, await PDFDocument.load(S.docs.get(p.docId).bytes, { ignoreEncryption: true }));
     }
   }
   for (const p of pages) {
+    if (hasMask(p)) { await flattenPage(out, p); continue; }
     const [copied] = await out.copyPages(sources.get(p.docId), [p.index]);
     const page = out.addPage(copied);
     page.setRotation(degrees(p.rot));
@@ -1533,8 +1557,14 @@ const stem = () => S.name.replace(/\.pdf$/i, "");
 
 async function exportPdf(pages, suffix) {
   if (!pages.length) { toast("Cochez d'abord des pages dans la colonne de gauche."); return; }
-  busy(true, "Écriture du PDF…");
-  try { download(await buildPdf(pages), stem() + suffix, "application/pdf"); toast("PDF enregistré."); }
+  const aplaties = pages.filter(hasMask).length;
+  busy(true, aplaties ? "Aplatissement des pages masquées…" : "Écriture du PDF…");
+  try {
+    download(await buildPdf(pages), stem() + suffix, "application/pdf");
+    toast(aplaties
+      ? `PDF enregistré. ${aplaties} page(s) aplatie(s) : le texte sous les caches a été supprimé.`
+      : "PDF enregistré.", aplaties ? 4200 : 2600);
+  }
   catch (e) { console.error(e); toast("L'enregistrement a échoué."); }
   finally { busy(false); }
 }
