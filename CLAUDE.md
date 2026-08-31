@@ -26,26 +26,72 @@ contenant des données personnelles.
 ## Repères dans le code
 
 L'état vit dans `S`, qui pointe vers l'onglet actif. `TABS` contient un état par
-projet ouvert ; changer d'onglet réaffecte `S`. `TOOL`, `PENDING` et `SIGS` sont
-communs à tous les onglets. Après toute modification de l'état, appeler
-`buildRail()`, `renderMain()` puis `syncChrome()`.
+projet ouvert ; changer d'onglet réaffecte `S`. `TOOL`, `PENDING`, `SIGS` et
+`FIND` sont communs à tous les onglets. Après toute modification de l'état,
+appeler `buildRail()`, `renderMain()` puis `syncChrome()`.
+
+Les piles d'annulation (`S.undo`, `S.redo`) appartiennent à l'onglet. Toute
+mutation doit appeler `snapshot()` **avant** de modifier quoi que ce soit ; les
+gestes continus (déplacement, redimensionnement, tracé) prennent leur
+instantané au `pointerdown` et ne l'empilent, par `pushSnapshot()`, qu'au
+relâchement et seulement s'ils ont produit un changement. Le clonage est
+volontairement superficiel sur les objets : `{...it}` partage la dataURL d'une
+signature au lieu de la recopier. Ne pas passer à `structuredClone`.
 
 ### Le système de coordonnées, à comprendre avant d'y toucher
 
-Les objets posés (texte, signature, cache) sont stockés en **points, origine en
-haut à gauche, dans l'espace d'affichage de la page, rotation comprise**. Le PDF,
-lui, place son origine en bas à gauche sur la page non pivotée. La conversion se
-fait uniquement dans `viewToPdf()`, au moment de l'export.
+Les objets posés sont stockés en **points, origine en haut à gauche, dans
+l'espace d'affichage de la page, rotation comprise**. Le PDF, lui, place son
+origine en bas à gauche sur la page non pivotée. La conversion se fait
+uniquement dans `viewToPdf()`, au moment de l'export.
 
-Conséquences à ne pas casser :
+Deux familles d'objets, et elles ne se traitent pas pareil :
 
-- Faire pivoter une page transporte les objets via `turnItems()` pour qu'ils
-  suivent l'image ; la rotation absolue est stockée dans `page.rot`.
-- À l'export, l'ancre est toujours le **coin bas-gauche affiché** de l'objet, et
-  le texte comme les images reçoivent `rotate: degrees(p.rot)`, ce qui compense
-  la rotation appliquée par le lecteur PDF.
-- `pdf.js` reçoit `getViewport({ scale, rotation: p.rot })`, `pdf-lib` reçoit
-  `page.setRotation(degrees(p.rot))`. Les deux doivent rester d'accord.
+- **Boîtes** (`text`, `image`, `mask`, `rect`, `highlight`) : un coin, une
+  largeur, une hauteur. À l'export l'ancre est le **coin bas-gauche affiché**,
+  et l'objet reçoit `rotate: degrees(p.rot)`, ce qui compense la rotation
+  appliquée par le lecteur PDF. À la rotation d'une page, `turnItems()`
+  transporte le coin et échange `w` et `h`.
+- **Tracés** (`ink`, `arrow`, reconnus par `isPath()`) : une liste de points,
+  pas de coin. Chaque point passe par `viewToPdf()` individuellement et **il
+  n'y a pas de `rotate` à passer** — une géométrie décrite par ses points est
+  déjà dans l'espace d'arrivée. À la rotation, `turnItems()` transporte chaque
+  point ; il n'y a ni `w` ni `h` à échanger.
+
+`pdf.js` reçoit `getViewport({ scale, rotation: p.rot })`, `pdf-lib` reçoit
+`page.setRotation(degrees(p.rot))`. Les deux doivent rester d'accord.
+
+**Ajouter un type d'objet demande de toucher quatre endroits**, et en oublier
+un donne un objet qui s'affiche puis disparaît à l'export :
+`paintItems()` (écran), `turnItems()` (rotation), `buildPdf()` (export PDF) et
+`pageToCanvas()` (exports PNG, Word « mise en page fidèle », et pages
+aplaties). Le harnais de test contrôle les quatre.
+
+### Le caviardage supprime vraiment le texte
+
+Un cache est un rectangle posé par-dessus la page : le texte qu'il recouvre
+resterait dans le PDF et se copierait encore. `buildPdf()` rend donc en image
+toute page portant un cache (`hasMask()` → `flattenPage()`), caches compris,
+et réintègre cette image : ce qui était dessous n'existe plus dans le fichier.
+
+Deux points à ne pas défaire :
+
+- **Seules** les pages masquées sont aplaties. Les autres sont recopiées telles
+  quelles et gardent leur texte sélectionnable et recherchable ; on ne paie la
+  perte du texte que là où elle protège quelque chose.
+- La page aplatie est **droite et aux dimensions affichées** : `pageToCanvas()`
+  a déjà appliqué `rotation: p.rot` au viewport, donc elle ne reçoit ni
+  `setRotation()` ni un second dessin des objets. Les redessiner les
+  doublerait, la faire pivoter la coucherait.
+
+### La recherche
+
+`pageHits()` compose la matrice du fragment avec celle d'un viewport à
+l'échelle 1 : les occurrences sortent donc directement dans l'espace
+d'affichage des objets posés, ce qui permet d'en faire des caches sans
+conversion. Le rectangle vient de **l'enveloppe des quatre coins transportés** :
+décaler l'ordonnée de la hauteur du texte ne vaut qu'à 0°, puisque sur une page
+pivotée « au-dessus de la ligne de base » n'est plus la direction des `y`.
 
 ### Le détourage des signatures
 
@@ -90,19 +136,61 @@ enregistrée à une fraction du cadre.
 - Le texte ajouté utilise Helvetica (police standard PDF) : les caractères hors
   WinAnsi sont remplacés par `?` dans `safeText()`. Intégrer une vraie police
   demanderait fontkit.
-- Pas d'annuler / rétablir.
 - L'export Word en mode texte perd tableaux et colonnes ; c'est assumé.
 - Les signatures sont conservées dans `localStorage`, donc propres à un
   navigateur et à une machine. `addSignature()` retente à 1000 puis 800 px si
   le quota est dépassé, mais reste par nature limité à cet onglet.
+- La recherche ne franchit pas les coupures que le PDF pose au milieu des mots :
+  une requête étalée sur deux fragments de texte n'est pas trouvée. Un scan sans
+  couche texte ne renvoie rien — il faudrait un OCR.
+- Les tracés n'ont pas de poignée de redimensionnement : les étirer les
+  déformerait.
+- Le titre et l'auteur (`S.meta`) ne passent pas par les piles d'annulation.
+- Pas de remplissage de formulaires, pas de chiffrement, pas d'édition du texte
+  déjà présent dans le PDF.
+
+## Les documents conservés sur la machine
+
+« Récents » range dans **IndexedDB** (base `plume`, magasin `recents`) les
+octets d'origine *et* le projet — ordre des pages, rotations, objets posés —
+pour rendre le travail à la réouverture, et pas seulement le fichier.
+`localStorage` ne conviendrait pas : quelques mégaoctets contre les vingt d'un
+PDF scanné.
+
+Rien ne part sur Internet et la promesse du programme tient : IndexedDB est
+cloisonné par origine. Mais c'est le seul endroit du programme où un document
+survit à la fermeture de l'onglet, ce qui se décide sur un poste partagé. D'où,
+sur l'écran d'accueil et non dans un réglage caché, l'interrupteur « Ne rien
+conserver » et le bouton « Vider la liste ». **Couper la conservation efface
+aussi ce qui restait** — laisser des documents derrière soi contredirait ce que
+la case promet.
+
+Deux comportements à préserver : un quota atteint ou un magasin refusé
+n'interrompt jamais l'édition (`recSave()` renonce en silence), et là où
+IndexedDB est indisponible — Safari en `file://`, navigation privée — la
+section disparaît au lieu d'afficher une liste éternellement vide, tandis que
+l'avertissement `beforeunload` reprend du service puisque le travail redevient
+volatil.
 
 ## Vérifications avant de valider une modification
 
-Il n'y a pas de tests automatisés. Vérifier à la main, dans le navigateur :
+Un harnais remplace la liste à cliquer d'autrefois :
 
-1. ouvrir un PDF, ajouter un texte, une signature, un cache, exporter, rouvrir
-   le résultat et contrôler que tout est à la bonne place ;
-2. refaire l'essai sur une page **pivotée**, c'est là que les régressions
-   apparaissent ;
-3. ouvrir deux PDF dans deux onglets et vérifier qu'ils ne se mélangent pas ;
-4. `python3 build.py` doit se terminer sans erreur.
+```bash
+python3 build.py && node tests/verify.mjs
+```
+
+Il pilote un Chromium sans interface (Playwright) sur
+`dist/Plume-PDF-autonome.html` — donc sans réseau, et `build.py` se trouve
+validé du même coup. Le script de l'application étant un `<script>` classique,
+ses fonctions de premier niveau sont globales et le harnais les appelle
+directement : rien à instrumenter dans `index.html`.
+
+Il couvre le contraste, l'aller-retour des coordonnées à l'export sur les
+quatre rotations, l'invariant `4 × turnItems() = identité`, le caviardage, les
+quatre chemins de sortie de chaque type d'annotation, la recherche, la gestion
+des pages, l'annulation et les récents (y compris quand IndexedDB est refusé).
+
+`node tests/verify.mjs contraste caviardage` n'exécute que les sections
+nommées. Une nouvelle fonctionnalité mérite sa section : le harnais n'a de
+valeur que s'il grandit avec le programme.

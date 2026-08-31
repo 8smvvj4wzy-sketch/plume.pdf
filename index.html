@@ -17,6 +17,10 @@
   --desk-2:#1A1E20;
   --mat:#CFCDC6;
   --line:#3A4145;
+  /* bordure des boutons : plus claire que --line, pour que la surface d'un
+     bouton se détache du fond (3:1 contre --desk comme contre --desk-2).
+     --line reste réservé aux cloisons de structure, qu'éclaircir alourdirait. */
+  --line-btn:#6B7579;
   --paper:#FFFFFF;
   --ink:#121618;
   --accent:#1F5F5B;
@@ -49,13 +53,16 @@ header{
 .brand b{font-size:15px;font-weight:600;letter-spacing:.2px}
 .brand span{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
 .actions{display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:wrap}
+/* la couleur du texte est posée explicitement : avec le color:inherit de la
+   règle button ci-dessus, un bouton placé sur un fond clair (#empty, .card)
+   héritait la couleur de son conteneur et devenait illisible. */
 .btn{
-  padding:7px 12px;border-radius:7px;border:1px solid var(--line);
-  background:#2C3236;transition:background .12s,border-color .12s;white-space:nowrap;
+  padding:7px 12px;border-radius:7px;border:1px solid var(--line-btn);
+  background:#333A3F;color:#E8EAEB;transition:background .12s,border-color .12s;white-space:nowrap;
 }
-.btn:hover{background:#363D42}
+.btn:hover{background:#3F474C}
 .btn:disabled{opacity:.4;cursor:default}
-.btn.primary{background:var(--accent);border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.primary:hover{background:var(--accent-hi)}
 .btn.ghost{border-color:transparent;background:transparent}
 .btn.ghost:hover{background:#2C3236}
@@ -91,7 +98,7 @@ header{
   min-width:224px;box-shadow:0 14px 34px rgba(0,0,0,.45)
 }
 .pop.on{display:block}
-.pop button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:6px;font-size:13px}
+.pop button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:6px;font-size:13px;color:#E8EAEB}
 .pop button:hover{background:var(--accent)}
 .pop hr{border:0;border-top:1px solid var(--line);margin:5px 2px}
 
@@ -148,6 +155,25 @@ main{flex:1;display:flex;min-height:0}
   border:2px dashed #B3B0A8;border-radius:12px;background:rgba(255,255,255,.4)
 }
 #empty h2{font-size:16px;margin:0 0 8px;color:#3C4245;font-weight:600}
+/* liste des documents conservés, sur le fond clair de l'écran d'accueil */
+#recents{margin-top:22px;border-top:1px solid #C3C0B8;padding-top:14px;text-align:left}
+#recents h3{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:#6E7478;margin:0 0 9px;font-weight:500
+}
+#rec-list{display:flex;flex-direction:column;gap:5px}
+.rec{
+  display:flex;align-items:center;gap:9px;padding:5px;width:100%;text-align:left;
+  border:1px solid #C9C6BF;background:#F7F6F3;border-radius:7px;color:var(--ink)
+}
+.rec:hover{background:#fff;border-color:var(--accent)}
+.rec img{width:30px;height:40px;object-fit:cover;background:#fff;border:1px solid #D8D5CE;flex:0 0 auto}
+.rec-t{display:flex;flex-direction:column;gap:1px;min-width:0}
+.rec-t b{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rec-t small{font-size:10px;color:#6E7478}
+.rec-note{font-size:10.5px;color:#6E7478;line-height:1.5;margin:9px 0 0}
+.rec-note label{display:inline-flex;align-items:center;gap:4px;margin-left:6px}
+.lnk{font-size:10.5px;color:var(--danger);text-decoration:underline;padding:0;margin-left:6px}
 #empty p{font-size:13px;line-height:1.5;margin:0 0 18px}
 
 /* objets posés sur la page */
@@ -170,6 +196,9 @@ main{flex:1;display:flex;min-height:0}
 }
 .item.sel .kill{display:grid}
 #band{position:absolute;border:1px solid var(--accent-hi);background:rgba(46,131,128,.18);display:none;pointer-events:none}
+/* occurrences de la recherche : sous les objets posés, et jamais cliquables */
+.hit{position:absolute;background:rgba(255,214,0,.42);pointer-events:none;border-radius:2px}
+.hit.on{background:rgba(255,138,0,.62);box-shadow:0 0 0 1px rgba(120,60,0,.5)}
 
 /* panneau droit */
 #panel{
@@ -183,7 +212,8 @@ main{flex:1;display:flex;min-height:0}
 }
 .tools-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .tool{
-  padding:9px 8px;border-radius:7px;border:1px solid var(--line);background:#2C3236;
+  padding:9px 8px;border-radius:7px;border:1px solid var(--line-btn);background:#333A3F;
+  color:#E8EAEB;
   display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left
 }
 .tool small{font-size:10px;color:var(--muted)}
@@ -193,10 +223,10 @@ main{flex:1;display:flex;min-height:0}
 .row label{flex:1}
 .row input[type=number]{width:58px}
 input[type=text],input[type=number],select{
-  background:#2C3236;border:1px solid var(--line);color:#E8EAEB;
+  background:#2C3236;border:1px solid var(--line-btn);color:#E8EAEB;
   border-radius:6px;padding:5px 7px;font-family:inherit;font-size:12px
 }
-input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:#2C3236}
+input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--line-btn);border-radius:6px;background:#2C3236}
 .stack{display:flex;flex-direction:column;gap:6px}
 .stack .btn{text-align:left}
 .sigs{display:flex;flex-direction:column;gap:6px}
@@ -272,6 +302,8 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
   <div class="brand"><b>Plume</b><span>éditeur pdf local</span></div>
   <div class="actions">
     <button class="btn" id="btn-open">Ouvrir un PDF</button>
+    <button class="btn ghost" id="btn-undo" title="Annuler (Cmd+Z)" disabled>↶</button>
+    <button class="btn ghost" id="btn-redo" title="Rétablir (Cmd+Maj+Z)" disabled>↷</button>
     <button class="btn ghost" id="btn-merge" disabled>Ajouter au projet</button>
     <div class="menu">
       <button class="btn primary" id="btn-export" disabled>Exporter ▾</button>
@@ -302,6 +334,16 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
       <h2>Aucun document ouvert</h2>
       <p>Déposez un PDF ici, ou ouvrez-en un. Tout reste sur votre Mac : rien n'est envoyé sur Internet.</p>
       <button class="btn primary" id="btn-open-2">Ouvrir un PDF</button>
+
+      <div id="recents" hidden>
+        <h3>Reprendre</h3>
+        <div id="rec-list"></div>
+        <p class="rec-note" id="rec-empty">Les documents ouverts seront conservés ici, sur cet ordinateur, avec vos annotations.</p>
+        <p class="rec-note">Conservés sur cette machine uniquement, jamais envoyés.
+          <label><input type="checkbox" id="rec-off"> Ne rien conserver</label>
+          <button class="lnk" id="rec-clear" hidden>Vider la liste</button>
+        </p>
+      </div>
     </div>
     <div id="sheet-wrap" hidden>
       <canvas id="page-canvas"></canvas>
@@ -315,9 +357,32 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
       <div class="tools-grid">
         <button class="tool on" data-tool="select">Sélection<small>déplacer, éditer</small></button>
         <button class="tool" data-tool="text">Texte<small>cliquer pour saisir</small></button>
-        <button class="tool" data-tool="mask">Masquer<small>tracer un cache</small></button>
+        <button class="tool" data-tool="mask">Caviarder<small>le texte est supprimé</small></button>
         <button class="tool" data-tool="image">Image<small>logo, tampon</small></button>
+        <button class="tool" data-tool="pen">Stylo<small>écrire à main levée</small></button>
+        <button class="tool" data-tool="highlight">Surligner<small>tracer une bande</small></button>
+        <button class="tool" data-tool="rect">Rectangle<small>encadrer</small></button>
+        <button class="tool" data-tool="arrow">Flèche<small>désigner</small></button>
       </div>
+    </div>
+
+    <div class="sec" id="draw-props">
+      <h3>Tracé</h3>
+      <div class="row"><label for="dcolor">Couleur</label><input type="color" id="dcolor" value="#C81E1E"></div>
+      <div class="row"><label for="dwidth">Épaisseur</label><input type="number" id="dwidth" value="2" min="1" max="24" step="1"></div>
+    </div>
+
+    <div class="sec">
+      <h3>Rechercher</h3>
+      <div class="row">
+        <input type="text" id="find-q" placeholder="Mot ou expression" style="flex:1;min-width:0">
+      </div>
+      <div class="row"><span id="find-count" class="hint" style="flex:1;margin:0">—</span>
+        <button class="btn" id="find-prev" title="Précédent (Maj+Entrée)" disabled>◀</button>
+        <button class="btn" id="find-next" title="Suivant (Entrée)" disabled>▶</button>
+      </div>
+      <button class="btn" id="find-mask" style="width:100%" disabled>Caviarder toutes les occurrences</button>
+      <p class="hint" style="margin-top:8px">Cmd+F. La recherche ne franchit pas les coupures que le PDF pose au milieu des mots ; un scan sans couche texte ne renvoie rien.</p>
     </div>
 
     <div class="sec" id="text-props">
@@ -343,7 +408,20 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
       <div class="stack">
         <button class="btn" id="btn-rot-l">Pivoter à gauche</button>
         <button class="btn" id="btn-rot-r">Pivoter à droite</button>
+        <button class="btn" id="btn-dup">Dupliquer la page</button>
+        <button class="btn" id="btn-blank">Insérer une page blanche</button>
+        <button class="btn" id="btn-insert">Insérer un PDF ici…</button>
         <button class="btn" id="btn-del">Supprimer la page</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h3>Document</h3>
+      <div class="stack">
+        <button class="btn" id="btn-numbers">Numéroter les pages</button>
+        <button class="btn" id="btn-watermark">Ajouter un filigrane…</button>
+        <button class="btn" id="btn-meta">Titre et auteur…</button>
+        <button class="btn" id="btn-print">Imprimer</button>
       </div>
     </div>
 
@@ -423,6 +501,7 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
 
 <input type="file" id="file-pdf" accept="application/pdf" hidden>
 <input type="file" id="file-merge" accept="application/pdf" hidden>
+<input type="file" id="file-insert" accept="application/pdf" hidden>
 <input type="file" id="file-img" accept="image/png,image/jpeg" hidden>
 <input type="file" id="file-sig" accept="image/*,application/pdf,.svg,.heic,.heif" hidden>
 
@@ -445,8 +524,12 @@ function newState(name) {
     sel: null,           // uid de l'objet sélectionné
     name: name || "Nouveau projet",
     picked: new Set(),   // uid des pages cochées
+    meta: null,          // { title, author }, écrits dans le PDF produit
+    undo: [],            // instantanés antérieurs, le plus récent en dernier
+    redo: [],
   };
 }
+const UNDO_MAX = 50;
 const TABS = [];         // [{ id, state }]
 let active = -1;
 let S = newState();
@@ -456,6 +539,51 @@ let PENDING = null;      // objet en attente de pose
 let uid = 0;
 const nextId = () => "o" + ++uid;
 let renderToken = 0;
+
+/* --------------------------------------------------- annuler / rétablir
+   Un instantané retient l'ordre des pages, leur rotation et leurs objets —
+   tout ce qui se répare. `S.docs` n'est jamais touché : les octets des PDF
+   chargés ne changent pas, seule leur mise en scène change.
+
+   Le clonage est volontairement superficiel sur les objets : `{...it}` partage
+   la chaîne `src` d'une signature au lieu de la recopier. structuredClone
+   dupliquerait ces dataURL, souvent lourdes, à chaque geste. */
+function pageSnapshot() {
+  return {
+    cur: S.cur,
+    picked: [...S.picked],
+    pages: S.pages.map((p) => ({ ...p, items: p.items.map((it) => ({ ...it })) })),
+  };
+}
+function pushSnapshot(snap) {
+  S.undo.push(snap);
+  if (S.undo.length > UNDO_MAX) S.undo.shift();
+  S.redo.length = 0;   // une nouvelle action ferme la branche des rétablissements
+  syncChrome();
+  recTouch();          // le travail en cours part vers « Récents »
+}
+// à appeler AVANT la mutation
+const snapshot = () => pushSnapshot(pageSnapshot());
+function applySnapshot(snap) {
+  // les occurrences pointent vers l'état d'avant : les reporter serait faux
+  clearFind();
+  S.pages = snap.pages;
+  S.cur = Math.min(snap.cur, Math.max(0, snap.pages.length - 1));
+  S.picked = new Set(snap.picked);
+  S.sel = null;
+  buildRail(); renderMain(); syncChrome();
+  recTouch();
+}
+function undo() {
+  if (!S.undo.length) return;
+  S.redo.push(pageSnapshot());
+  applySnapshot(S.undo.pop());
+}
+function redo() {
+  if (!S.redo.length) return;
+  S.undo.push(pageSnapshot());
+  applySnapshot(S.redo.pop());
+}
 
 /* ------------------------------------------------------------ utilitaires */
 function toast(msg, ms = 2600) {
@@ -495,7 +623,12 @@ function viewToPdf(p, x, y) {
 // rotation d'une page : on transporte les objets pour qu'ils suivent l'image
 function turnItems(p, dir) {
   const vw = viewW(p), vh = viewH(p);
+  // un point de l'affichage courant vers celui d'après rotation
+  const tourne = ([x, y]) => (dir > 0 ? [vh - y, x] : [y, vw - x]);
   for (const it of p.items) {
+    // un tracé n'a pas de coin : chaque point suit la même règle que les
+    // coins d'une boîte, et rien n'est à échanger puisqu'il n'a ni w ni h
+    if (isPath(it)) { it.pts = it.pts.map(tourne); continue; }
     const w = it.w || 0, h = it.h || 0;
     if (dir > 0) { const nx = vh - (it.y + h); it.y = it.x; it.x = nx; }
     else         { const ny = vw - (it.x + w); it.x = it.y; it.y = ny; }
@@ -528,6 +661,8 @@ function switchTab(i) {
   if (i < 0 || i >= TABS.length) return;
   active = i; S = TABS[i].state;
   PENDING = null; $("#overlay").classList.remove("placing");
+  // les occurrences appartiennent au document quitté : rien à reporter ici
+  clearFind();
   drawTabs(); buildRail(); renderMain();
 }
 function closeTab(i) {
@@ -539,7 +674,9 @@ function closeTab(i) {
 }
 
 /* ------------------------------------------------------------- chargement */
-async function loadPdf(file, merge = false) {
+/* `at` : position d'insertion dans S.pages. Absent, les pages vont à la fin —
+   c'est le comportement de « Ajouter au projet ». */
+async function loadPdf(file, merge = false, at = null) {
   busy(true, "Lecture du document…");
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -548,23 +685,142 @@ async function loadPdf(file, merge = false) {
     if (!merge) { // chaque document ouvert prend son propre onglet
       const t = { id: "t" + Date.now(), state: newState(file.name) };
       TABS.push(t); active = TABS.length - 1; S = t.state;
-    }
+    } else snapshot();
     const docId = "d" + Date.now() + Math.random().toString(36).slice(2, 6);
     S.docs.set(docId, { bytes, pdfjs: doc });
 
+    const neuves = [];
     for (let i = 0; i < doc.numPages; i++) {
       const pg = await doc.getPage(i + 1);
       const v = pg.view; // [x0,y0,x1,y1] non pivoté
-      S.pages.push({
+      neuves.push({
         uid: nextId(), docId, index: i, rot: ((pg.rotate % 360) + 360) % 360,
         W: v[2] - v[0], H: v[3] - v[1], items: [],
       });
     }
+    S.pages.splice(at ?? S.pages.length, 0, ...neuves);
+    if (at !== null) S.cur = at;
     drawTabs(); buildRail(); await renderMain(); syncChrome();
+    recTouch();
     toast(merge ? `${doc.numPages} page(s) ajoutée(s)` : `${doc.numPages} page(s) chargée(s)`);
   } catch (e) {
     console.error(e);
     toast(String(e).includes("password") ? "Ce PDF est protégé par mot de passe." : "Impossible de lire ce fichier.");
+  } finally { busy(false); }
+}
+
+/* ------------------------------------------------------- pages du projet
+   Plusieurs pages peuvent viser le même document source : buildPdf() recopie
+   la page voulue à chaque fois (copyPages sur p.index). Dupliquer revient donc
+   à ajouter une entrée de plus, sans toucher aux octets d'origine. */
+function duplicatePage() {
+  const p = S.pages[S.cur]; if (!p) return;
+  snapshot();
+  S.pages.splice(S.cur + 1, 0, {
+    ...p, uid: nextId(), items: p.items.map((it) => ({ ...it })),
+  });
+  S.cur++;
+  buildRail(); renderMain(); syncChrome();
+  toast("Page dupliquée.");
+}
+
+/* Une page blanche est un vrai PDF d'une page, fabriqué à la volée et rangé
+   dans S.docs comme un document importé : le reste du programme n'a pas à
+   savoir qu'elle n'est venue d'aucun fichier. */
+async function insertBlank() {
+  const ref = S.pages[S.cur];
+  const W = ref ? ref.W : 595.28, H = ref ? ref.H : 841.89;
+  busy(true, "Création de la page…");
+  try {
+    const doc = await PDFDocument.create();
+    doc.addPage([W, H]);
+    const bytes = new Uint8Array(await doc.save());
+    const pdfjs = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+    const docId = "d" + Date.now() + Math.random().toString(36).slice(2, 6);
+    snapshot();
+    S.docs.set(docId, { bytes, pdfjs });
+    const at = S.pages.length ? S.cur + 1 : 0;
+    S.pages.splice(at, 0, { uid: nextId(), docId, index: 0, rot: 0, W, H, items: [] });
+    S.cur = at;
+    buildRail(); await renderMain(); syncChrome();
+    toast("Page blanche insérée.");
+  } catch (e) { console.error(e); toast("La création de la page a échoué."); }
+  finally { busy(false); }
+}
+
+/* Numérotation et filigrane sont des textes posés en série : ils passent par
+   le chemin d'export existant, il n'y a rien à ajouter à buildPdf(). */
+function numberPages() {
+  if (!S.pages.length) return;
+  snapshot();
+  S.pages.forEach((p, i) => {
+    // on retire une numérotation précédente plutôt que de l'empiler
+    p.items = p.items.filter((it) => it.auto !== "num");
+    p.items.push({
+      id: nextId(), kind: "text", auto: "num",
+      text: `${i + 1} / ${S.pages.length}`,
+      x: viewW(p) / 2 - 18, y: viewH(p) - 34,
+      size: 10, color: "#444444", bold: false, w: 36, h: 13,
+    });
+  });
+  buildRail(); renderMain(); syncChrome();
+  toast(`${S.pages.length} page(s) numérotée(s).`);
+}
+
+function addWatermark() {
+  if (!S.pages.length) return;
+  const txt = prompt("Texte du filigrane :", "COPIE");
+  if (!txt) return;
+  snapshot();
+  S.pages.forEach((p) => {
+    p.items = p.items.filter((it) => it.auto !== "wm");
+    const size = Math.round(viewW(p) / 7);
+    const it = { id: nextId(), kind: "text", auto: "wm", text: txt,
+                 x: 0, y: 0, size, color: "#C8C8C8", bold: true };
+    measure(it);
+    it.x = Math.max(0, (viewW(p) - it.w) / 2);
+    it.y = Math.max(0, (viewH(p) - it.h) / 2);
+    p.items.push(it);
+  });
+  buildRail(); renderMain(); syncChrome();
+  toast("Filigrane ajouté sur toutes les pages.");
+}
+
+/* Titre et auteur voyagent avec le projet et sont écrits dans le PDF produit
+   par buildPdf(). Le nom du fichier, lui, reste celui de l'onglet. */
+function editMeta() {
+  const t = prompt("Titre du document :", S.meta?.title || stem());
+  if (t === null) return;
+  const a = prompt("Auteur :", S.meta?.author || "");
+  if (a === null) return;
+  S.meta = { title: t, author: a };
+  toast("Titre et auteur enregistrés.");
+}
+
+/* L'impression passe par le PDF réel, pas par une feuille de style : ce qui
+   sort de l'imprimante est alors exactement ce qui sortirait de l'export.
+   Tout reste local, l'URL d'objet ne quitte pas le navigateur. */
+async function printDoc() {
+  if (!S.pages.length) return;
+  busy(true, "Préparation de l'impression…");
+  let url;
+  try {
+    url = URL.createObjectURL(new Blob([await buildPdf(S.pages)], { type: "application/pdf" }));
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0;border:0";
+    f.src = url;
+    await new Promise((res, rej) => {
+      f.onload = res; f.onerror = rej;
+      document.body.appendChild(f);
+      setTimeout(res, 4000); // certains lecteurs n'émettent jamais l'événement
+    });
+    f.contentWindow.focus();
+    f.contentWindow.print();
+    // l'iframe doit survivre au dialogue d'impression, d'où le retrait différé
+    setTimeout(() => { f.remove(); URL.revokeObjectURL(url); }, 60000);
+  } catch (e) {
+    console.error(e); toast("L'impression a échoué.");
+    if (url) URL.revokeObjectURL(url);
   } finally { busy(false); }
 }
 
@@ -646,6 +902,7 @@ function wireRailDrag() {
       const after = el.classList.contains("drop-after");
       el.classList.remove("drop-before", "drop-after");
       if (!dragged || dragged === el) return;
+      snapshot();
       const from = S.pages.findIndex((p) => p.uid === dragged.dataset.uid);
       let to = S.pages.findIndex((p) => p.uid === el.dataset.uid) + (after ? 1 : 0);
       if (from < to) to--; // le retrait décale d'un cran tous les index qui le suivaient
@@ -663,7 +920,7 @@ async function renderMain() {
   const p = S.pages[S.cur];
   $("#empty").hidden = !!p;
   $("#sheet-wrap").hidden = !p;
-  if (!p) { syncChrome(); return; }
+  if (!p) { drawRecents(); syncChrome(); return; }
 
   const token = ++renderToken;
   const src = S.docs.get(p.docId);
@@ -697,6 +954,7 @@ function goTo(i) {
 }
 
 function rotatePage(p, dir) {
+  snapshot();
   turnItems(p, dir);
   p.rot = (p.rot + (dir > 0 ? 90 : 270)) % 360;
   refreshThumb(p);
@@ -706,6 +964,7 @@ function rotatePage(p, dir) {
 function removePages(uids) {
   if (!uids.length) return;
   if (S.pages.length - uids.length < 1) { toast("Un document doit garder au moins une page."); return; }
+  snapshot();
   const set = new Set(uids);
   S.pages = S.pages.filter((p) => !set.has(p.uid));
   uids.forEach((u) => S.picked.delete(u));
@@ -714,20 +973,125 @@ function removePages(uids) {
 }
 
 /* --------------------------------------------------------- objets posés */
+/* ---------------------------------------------------------- annotations
+   Quatre types s'ajoutent aux trois d'origine :
+
+     ink       { pts:[[x,y],…], color, width }   tracé à main levée
+     arrow     { pts:[[x0,y0],[x1,y1]], … }      deux points, donc même
+                                                 transport que ink à la rotation
+     highlight { x, y, w, h, color }             bande translucide
+     rect      { x, y, w, h, color, width }      cadre
+
+   Les tracés (ink, arrow) sont décrits par leurs points, pas par une boîte :
+   une seule règle de rotation les couvre tous les deux, et le trait garde sa
+   forme exacte. Ils n'ont pas de poignée de redimensionnement — on les efface
+   et on les refait, ce qui est plus rapide que de les étirer. */
+const isPath = (it) => it.kind === "ink" || it.kind === "arrow";
+const isDrawn = (it) => isPath(it) || it.kind === "rect" || it.kind === "highlight";
+
+// enveloppe en points, marge comprise pour l'épaisseur du trait
+function bbox(it) {
+  const m = isPath(it) || it.kind === "rect" ? (it.width || 1) / 2 + 1 : 0;
+  if (isPath(it)) {
+    const xs = it.pts.map((q) => q[0]), ys = it.pts.map((q) => q[1]);
+    const x = Math.min(...xs) - m, y = Math.min(...ys) - m;
+    // la pointe d'une flèche déborde de la ligne : on lui laisse la place
+    const t = it.kind === "arrow" ? (it.width || 1) * 3 : 0;
+    return { x: x - t, y: y - t,
+             w: Math.max(...xs) - x + m + 2 * t, h: Math.max(...ys) - y + m + 2 * t };
+  }
+  return { x: it.x - m, y: it.y - m, w: it.w + 2 * m, h: it.h + 2 * m };
+}
+
+// pointe de flèche : deux segments partant de l'extrémité, à 25° de l'axe
+function arrowHead(p0, p1, width) {
+  const a = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]);
+  const L = Math.max(6, width * 3.2), o = 0.44;
+  return [
+    [p1[0] - L * Math.cos(a - o), p1[1] - L * Math.sin(a - o)],
+    [p1[0] - L * Math.cos(a + o), p1[1] - L * Math.sin(a + o)],
+  ];
+}
+
+/* Le SVG est décrit dans le repère de la page (en points) et cadré sur
+   l'enveloppe de l'objet : l'affichage suit alors S.scale sans recalcul, et
+   le trait reste net à tous les zooms. */
+function drawnSvg(it) {
+  const b = bbox(it);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `${b.x} ${b.y} ${b.w} ${b.h}`);
+  svg.setAttribute("width", "100%"); svg.setAttribute("height", "100%");
+  svg.style.display = "block"; svg.style.overflow = "visible";
+
+  const trait = (d) => {
+    const el = document.createElementNS(ns, "path");
+    el.setAttribute("d", d);
+    el.setAttribute("fill", "none");
+    el.setAttribute("stroke", it.color);
+    el.setAttribute("stroke-width", it.width || 2);
+    el.setAttribute("stroke-linecap", "round");
+    el.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(el);
+    return el;
+  };
+
+  if (it.kind === "ink") {
+    trait(it.pts.map((q, i) => (i ? "L" : "M") + q[0] + " " + q[1]).join(" "));
+  } else if (it.kind === "arrow") {
+    const [p0, p1] = it.pts;
+    trait(`M${p0[0]} ${p0[1]} L${p1[0]} ${p1[1]}`);
+    const [a, c] = arrowHead(p0, p1, it.width || 2);
+    trait(`M${a[0]} ${a[1]} L${p1[0]} ${p1[1]} L${c[0]} ${c[1]}`);
+  } else if (it.kind === "rect") {
+    const r = document.createElementNS(ns, "rect");
+    r.setAttribute("x", it.x); r.setAttribute("y", it.y);
+    r.setAttribute("width", it.w); r.setAttribute("height", it.h);
+    r.setAttribute("fill", "none");
+    r.setAttribute("stroke", it.color);
+    r.setAttribute("stroke-width", it.width || 2);
+    svg.appendChild(r);
+  } else { // highlight
+    const r = document.createElementNS(ns, "rect");
+    r.setAttribute("x", it.x); r.setAttribute("y", it.y);
+    r.setAttribute("width", it.w); r.setAttribute("height", it.h);
+    r.setAttribute("fill", it.color);
+    r.setAttribute("fill-opacity", HL_OPACITY);
+    svg.appendChild(r);
+  }
+  return svg;
+}
+const HL_OPACITY = 0.35;
+
 function paintItems() {
   const ov = $("#overlay");
-  ov.querySelectorAll(".item").forEach((n) => n.remove());
+  ov.querySelectorAll(".item, .hit").forEach((n) => n.remove());
   const p = S.pages[S.cur]; if (!p) return;
   const s = S.scale;
+
+  // les occurrences d'abord : elles doivent rester sous les objets posés
+  FIND.hits.forEach((h, i) => {
+    if (h.uid !== p.uid) return;
+    const el = document.createElement("div");
+    el.className = "hit" + (i === FIND.at ? " on" : "");
+    el.style.left = h.x * s + "px"; el.style.top = h.y * s + "px";
+    el.style.width = h.w * s + "px"; el.style.height = h.h * s + "px";
+    ov.appendChild(el);
+  });
 
   for (const it of p.items) {
     const el = document.createElement("div");
     el.className = "item" + (S.sel === it.id ? " sel" : "");
     el.dataset.id = it.id;
-    el.style.left = it.x * s + "px";
-    el.style.top = it.y * s + "px";
+    const b = isDrawn(it) ? bbox(it) : it;
+    el.style.left = b.x * s + "px";
+    el.style.top = b.y * s + "px";
 
-    if (it.kind === "text") {
+    if (isDrawn(it)) {
+      el.style.width = b.w * s + "px";
+      el.style.height = b.h * s + "px";
+      el.appendChild(drawnSvg(it));
+    } else if (it.kind === "text") {
       const t = document.createElement("div");
       t.className = "txt";
       t.textContent = it.text;
@@ -751,11 +1115,14 @@ function paintItems() {
     kill.className = "kill"; kill.textContent = "✕"; kill.title = "Supprimer";
     kill.addEventListener("pointerdown", (e) => e.stopPropagation());
     kill.addEventListener("click", () => {
-      p.items = p.items.filter((x) => x !== it); S.sel = null; paintItems();
+      snapshot();
+      p.items = p.items.filter((x) => x !== it); S.sel = null; paintItems(); syncChrome();
     });
     el.appendChild(kill);
 
-    if (it.kind !== "text") {
+    // pas de poignée sur un texte (sa taille vient du corps) ni sur un tracé
+    // (l'étirer déformerait le trait ; on l'efface et on le refait)
+    if (it.kind !== "text" && !isPath(it)) {
       const g = document.createElement("div"); g.className = "grip";
       g.addEventListener("pointerdown", (e) => startResize(e, it, el));
       el.appendChild(g);
@@ -776,13 +1143,28 @@ function startMove(e, it, el) {
   e.preventDefault();
   S.sel = it.id;
   $("#overlay").querySelectorAll(".item").forEach((n) => n.classList.toggle("sel", n === el));
-  const s = S.scale, x0 = e.clientX, y0 = e.clientY, ix = it.x, iy = it.y;
+  const s = S.scale, x0 = e.clientX, y0 = e.clientY;
+  // un tracé n'a pas de coin : on déplace tous ses points, en se repérant sur
+  // l'enveloppe pour l'empêcher de sortir par le haut ou par la gauche
+  const b0 = isDrawn(it) ? bbox(it) : null;
+  const ix = isPath(it) ? b0.x : it.x, iy = isPath(it) ? b0.y : it.y;
+  const pts0 = isPath(it) ? it.pts.map((q) => [...q]) : null;
+  // l'instantané est pris avant le geste mais empilé seulement s'il a servi :
+  // un simple clic de sélection ne doit pas remplir la pile d'annulation
+  const avant = pageSnapshot();
+  let dx = 0, dy = 0;
   const move = (ev) => {
-    it.x = Math.max(0, ix + (ev.clientX - x0) / s);
-    it.y = Math.max(0, iy + (ev.clientY - y0) / s);
-    el.style.left = it.x * s + "px"; el.style.top = it.y * s + "px";
+    dx = Math.max(-ix, (ev.clientX - x0) / s);
+    dy = Math.max(-iy, (ev.clientY - y0) / s);
+    if (pts0) it.pts = pts0.map((q) => [q[0] + dx, q[1] + dy]);
+    else { it.x = ix + dx; it.y = iy + dy; }
+    const b = isDrawn(it) ? bbox(it) : it;
+    el.style.left = b.x * s + "px"; el.style.top = b.y * s + "px";
   };
-  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  const up = () => {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+    if (dx || dy) pushSnapshot(avant);
+  };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
 }
 
@@ -790,21 +1172,29 @@ function startResize(e, it, el) {
   e.preventDefault(); e.stopPropagation();
   const s = S.scale, x0 = e.clientX, y0 = e.clientY, w0 = it.w, h0 = it.h;
   const ratio = h0 / w0, keep = it.kind !== "mask";
+  const avant = pageSnapshot();
   const move = (ev) => {
     let w = Math.max(12, w0 + (ev.clientX - x0) / s);
     let h = keep ? w * ratio : Math.max(8, h0 + (ev.clientY - y0) / s);
     it.w = w; it.h = h;
     el.style.width = w * s + "px"; el.style.height = h * s + "px";
   };
-  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  const up = () => {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+    if (it.w !== w0 || it.h !== h0) pushSnapshot(avant);
+  };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
 }
 
 function editing() { return $('#overlay [contenteditable="true"]'); }
 
-function editText(el, it) {
+// `fresh` : le texte vient d'être créé, la pose a déjà posé son instantané et
+// la première frappe ne doit pas en ajouter un second.
+function editText(el, it, fresh = false) {
   const t = $(".txt", el);
   if (t.getAttribute("contenteditable") === "true") return;
+  const avant = fresh ? null : pageSnapshot();
+  const texte0 = it.text;
   t.contentEditable = "true";
   // le focus est posé après le cycle de l'événement : sinon l'action par défaut
   // du clic le reprend aussitôt et le champ se referme sans rien garder.
@@ -825,6 +1215,7 @@ function editText(el, it) {
       const p = S.pages[S.cur]; p.items = p.items.filter((x) => x !== it);
       S.sel = null;
     }
+    if (avant && it.text !== texte0) pushSnapshot(avant);
     paintItems();
   };
   t.addEventListener("blur", done, { once: true });
@@ -848,6 +1239,7 @@ $("#overlay").addEventListener("pointerdown", (e) => {
     // centré sur le clic, pas calé sous le coin haut-gauche du curseur
     const ix = Math.max(0, x - PENDING.w / 2), iy = Math.max(0, y - PENDING.h / 2);
     const it = { id: nextId(), kind: "image", src: PENDING.src, x: ix, y: iy, w: PENDING.w, h: PENDING.h };
+    snapshot();
     p.items.push(it); PENDING = null; S.sel = it.id;
     $("#overlay").classList.remove("placing");
     paintItems(); toast("Objet posé. Faites glisser pour ajuster.");
@@ -858,10 +1250,79 @@ $("#overlay").addEventListener("pointerdown", (e) => {
       id: nextId(), kind: "text", x, y, text: "Texte",
       size: +$("#fsize").value || 12, color: $("#fcolor").value, bold: $("#fbold").checked,
     };
+    snapshot();
     measure(it); p.items.push(it); S.sel = it.id; paintItems();
-    const el = $(`.item[data-id="${it.id}"]`); if (el) editText(el, it);
+    const el = $(`.item[data-id="${it.id}"]`); if (el) editText(el, it, true);
     return;
   }
+  // stylo : on collecte les points et on redessine le seul objet concerné,
+  // pas tout le calque, pour que le trait suive le curseur sans saccade
+  if (TOOL === "pen") {
+    const it = { id: nextId(), kind: "ink", pts: [[x, y]],
+                 color: $("#dcolor").value, width: +$("#dwidth").value || 2 };
+    snapshot();
+    p.items.push(it); S.sel = it.id; paintItems();
+    let el = $(`.item[data-id="${it.id}"]`);
+    const move = (ev) => {
+      const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
+      const d = it.pts[it.pts.length - 1];
+      if (Math.hypot(cx - d[0], cy - d[1]) < 0.7) return; // filtre le bruit du capteur
+      it.pts.push([cx, cy]);
+      const b = bbox(it);
+      el.style.left = b.x * S.scale + "px"; el.style.top = b.y * S.scale + "px";
+      el.style.width = b.w * S.scale + "px"; el.style.height = b.h * S.scale + "px";
+      el.querySelector("svg")?.remove();
+      el.appendChild(drawnSvg(it));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      // un simple clic ne laisse pas de trait : on retire l'objet vide
+      if (it.pts.length < 2) { p.items = p.items.filter((z) => z !== it); S.undo.pop(); }
+      paintItems(); syncChrome();
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    return;
+  }
+
+  // surligneur, rectangle et flèche : un glisser d'un point à l'autre
+  if (TOOL === "highlight" || TOOL === "rect" || TOOL === "arrow") {
+    const band = $("#band");
+    band.style.display = "block";
+    band.style.left = x * S.scale + "px"; band.style.top = y * S.scale + "px";
+    band.style.width = band.style.height = "0px";
+    const move = (ev) => {
+      const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
+      band.style.left = Math.min(x, cx) * S.scale + "px";
+      band.style.top = Math.min(y, cy) * S.scale + "px";
+      band.style.width = Math.abs(cx - x) * S.scale + "px";
+      band.style.height = Math.abs(cy - y) * S.scale + "px";
+    };
+    const up = (ev) => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      band.style.display = "none";
+      const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
+      const color = $("#dcolor").value, width = +$("#dwidth").value || 2;
+      if (TOOL === "arrow") {
+        if (Math.hypot(cx - x, cy - y) < 6) return;
+        snapshot();
+        // la flèche garde le sens du geste : elle pointe là où on relâche
+        p.items.push({ id: nextId(), kind: "arrow", pts: [[x, y], [cx, cy]], color, width });
+      } else {
+        const w = Math.abs(cx - x), h = Math.abs(cy - y);
+        if (w < 4 || h < 4) return;
+        snapshot();
+        p.items.push(TOOL === "highlight"
+          // le surligneur va au jaune, quelle que soit la couleur de tracé :
+          // c'est une bande translucide, pas un trait
+          ? { id: nextId(), kind: "highlight", x: Math.min(x, cx), y: Math.min(y, cy), w, h, color: "#FFE24A" }
+          : { id: nextId(), kind: "rect", x: Math.min(x, cx), y: Math.min(y, cy), w, h, color, width });
+      }
+      paintItems(); syncChrome();
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    return;
+  }
+
   if (TOOL === "mask") {
     const band = $("#band");
     band.style.display = "block";
@@ -880,6 +1341,7 @@ $("#overlay").addEventListener("pointerdown", (e) => {
       const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
       const w = Math.abs(cx - x), h = Math.abs(cy - y);
       if (w < 4 || h < 4) return;
+      snapshot();
       p.items.push({ id: nextId(), kind: "mask", x: Math.min(x, cx), y: Math.min(y, cy), w, h, color: "#FFFFFF" });
       paintItems();
     };
@@ -888,6 +1350,283 @@ $("#overlay").addEventListener("pointerdown", (e) => {
   }
   S.sel = null; paintItems();
 });
+
+/* ------------------------------------------------------------ recherche
+   Les occurrences sont stockées comme les objets posés : en points, origine
+   en haut à gauche, dans l'espace d'affichage de la page. C'est déjà ce que
+   donne pdf.js quand on compose la matrice du fragment avec celle d'un
+   viewport construit à l'échelle 1 et à la rotation de la page — d'où la
+   possibilité d'en faire directement des caches. */
+let FIND = { q: "", hits: [], at: -1 };
+
+async function pageHits(p, q) {
+  const pg = await S.docs.get(p.docId).pdfjs.getPage(p.index + 1);
+  const vp = pg.getViewport({ scale: 1, rotation: p.rot });
+  const tc = await pg.getTextContent();
+  const out = [];
+  for (const it of tc.items) {
+    if (!it.str) continue;
+    const bas = it.str.toLowerCase();
+    let from = 0, k;
+    while ((k = bas.indexOf(q, from)) !== -1) {
+      from = k + q.length;
+      /* m applique au fragment la matrice du viewport : (m[4], m[5]) est
+         l'origine de sa ligne de base, (m[0], m[1]) l'image de l'axe des x du
+         texte et (m[2], m[3]) celle de son axe des y.
+
+         Le rectangle est obtenu en transportant les quatre coins puis en
+         prenant leur enveloppe. Décaler simplement l'ordonnée de la hauteur
+         du texte ne marcherait qu'à 0° : sur une page pivotée, « au-dessus de
+         la ligne de base » n'est plus la direction des y. */
+      const m = pdfjsLib.Util.transform(vp.transform, it.transform);
+      const sx = Math.hypot(m[0], m[1]) || 1;   // unités de texte -> points
+      const sy = Math.hypot(m[2], m[3]) || 1;
+      // largeur au prorata des caractères : pdf.js ne mesure pas glyphe par
+      // glyphe, et l'approximation suffit largement à poser un cache
+      const par = it.width / it.str.length;
+      const u0 = (par * k) / sx, u1 = (par * (k + q.length)) / sx;
+      const v1 = (it.height || sy) / sy;
+      const coin = (u, v) => [m[4] + u * m[0] + v * m[2], m[5] + u * m[1] + v * m[3]];
+      const cs = [coin(u0, 0), coin(u1, 0), coin(u1, v1), coin(u0, v1)];
+      const xs = cs.map((c) => c[0]), ys = cs.map((c) => c[1]);
+      const x = Math.min(...xs), y = Math.min(...ys);
+      out.push({
+        uid: p.uid, x, y,
+        w: Math.max(...xs) - x, h: Math.max(...ys) - y,
+      });
+    }
+  }
+  return out;
+}
+
+async function runFind(q) {
+  FIND = { q, hits: [], at: -1 };
+  if (q.length >= 2) {
+    busy(true, "Recherche…");
+    try {
+      const bas = q.toLowerCase();
+      for (const p of S.pages) FIND.hits.push(...(await pageHits(p, bas)));
+    } catch (e) { console.error(e); }
+    finally { busy(false); }
+  }
+  if (FIND.hits.length) FIND.at = 0;
+  syncFind();
+  paintItems();
+  if (FIND.at === 0) goToHit(0);
+}
+
+function clearFind() {
+  FIND = { q: "", hits: [], at: -1 };
+  $("#find-q").value = "";
+  syncFind();
+}
+
+function syncFind() {
+  const n = FIND.hits.length;
+  $("#find-count").textContent = !FIND.q ? "—" : n ? `${FIND.at + 1} / ${n}` : "aucune occurrence";
+  ["find-prev", "find-next", "find-mask"].forEach((id) => ($("#" + id).disabled = !n));
+}
+
+function goToHit(i) {
+  const n = FIND.hits.length; if (!n) return;
+  FIND.at = ((i % n) + n) % n;
+  const h = FIND.hits[FIND.at];
+  const k = S.pages.findIndex((p) => p.uid === h.uid);
+  syncFind();
+  if (k !== -1 && k !== S.cur) { goTo(k); return; }
+  paintItems();
+  $("#overlay").querySelector(".hit.on")?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+/* Un seul instantané pour toute la série : une annulation défait le lot. */
+function maskAllHits() {
+  if (!FIND.hits.length) return;
+  snapshot();
+  const M = 1; // léger débord, pour ne pas laisser dépasser un jambage
+  let n = 0;
+  for (const h of FIND.hits) {
+    const p = S.pages.find((x) => x.uid === h.uid); if (!p) continue;
+    p.items.push({
+      id: nextId(), kind: "mask",
+      x: Math.max(0, h.x - M), y: Math.max(0, h.y - M),
+      w: h.w + 2 * M, h: h.h + 2 * M, color: "#FFFFFF",
+    });
+    n++;
+  }
+  // les occurrences sont maintenant recouvertes : les garder surlignées sous
+  // leurs propres caches n'apprendrait plus rien
+  clearFind();
+  buildRail(); renderMain(); syncChrome();
+  toast(`${n} occurrence(s) caviardée(s). Le texte partira à l'export.`, 3600);
+}
+
+/* -------------------------------------------------------------- récents
+   Les documents ouverts sont conservés sur CETTE machine, dans IndexedDB —
+   cloisonné par origine, jamais transmis, jamais lisible par un autre site.
+   Rien ne part sur Internet, la promesse du programme tient toujours ; mais
+   c'est la première fois qu'un document survit à la fermeture de l'onglet, et
+   sur un poste partagé cela se décide. D'où l'interrupteur et le bouton de
+   purge, tous deux à portée de main plutôt qu'enfouis dans un réglage.
+
+   localStorage ne conviendrait pas : quelques mégaoctets, alors qu'un PDF
+   scanné en fait couramment vingt.
+
+   On enregistre les octets d'origine ET le projet — ordre des pages,
+   rotations, objets posés — pour rouvrir le travail, et pas seulement le
+   fichier. */
+const REC_DB = "plume", REC_STORE = "recents", REC_MAX = 10;
+const REC_BUDGET = 300e6;                    // au-delà, on évince les plus anciens
+const REC_OFF = "plume.recents.off";         // l'utilisateur a coupé la conservation
+let recDb = null, recBroken = false;
+
+const recEnabled = () => !recBroken && localStorage.getItem(REC_OFF) !== "1";
+
+/* IndexedDB est refusé dans certains contextes — Safari en file://, navigation
+   privée, réglages restrictifs. On le détecte une fois et la section disparaît
+   au lieu d'afficher une liste éternellement vide. */
+function recOpen() {
+  if (recDb) return Promise.resolve(recDb);
+  return new Promise((res, rej) => {
+    let rq;
+    try { rq = indexedDB.open(REC_DB, 1); } catch (e) { return rej(e); }
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains(REC_STORE)) {
+        db.createObjectStore(REC_STORE, { keyPath: "id" }).createIndex("opened", "opened");
+      }
+    };
+    rq.onsuccess = () => { recDb = rq.result; res(recDb); };
+    rq.onerror = () => rej(rq.error);
+    rq.onblocked = () => rej(new Error("bloqué"));
+  });
+}
+
+function recTx(mode, fn) {
+  return recOpen().then((db) => new Promise((res, rej) => {
+    const tx = db.transaction(REC_STORE, mode);
+    const rq = fn(tx.objectStore(REC_STORE));
+    tx.oncomplete = () => res(rq?.result);
+    tx.onerror = tx.onabort = () => rej(tx.error);
+  }));
+}
+
+const recAll = () => recTx("readonly", (st) => st.getAll())
+  .then((r) => (r || []).sort((a, b) => b.opened - a.opened));
+
+/* Éviction : d'abord ce qui dépasse REC_MAX, puis ce qui dépasse le budget,
+   du plus ancien au plus récent. */
+async function recTrim() {
+  const list = await recAll();
+  let total = list.reduce((s, r) => s + (r.size || 0), 0);
+  const morts = list.slice(REC_MAX);
+  for (const r of list.slice(0, REC_MAX).reverse()) {
+    if (total <= REC_BUDGET) break;
+    morts.push(r); total -= r.size || 0;
+  }
+  for (const r of morts) await recTx("readwrite", (st) => st.delete(r.id));
+}
+
+/* Le projet est sérialisable tel quel : les objets posés sont des données
+   simples, et une page ne retient de son document que l'identifiant et le
+   numéro de page. Les octets, eux, sont partagés par tous les onglets d'un
+   même fichier — on les range une fois par document. */
+function recProject() {
+  return {
+    name: S.name,
+    meta: S.meta,
+    cur: S.cur,
+    docs: [...S.docs.entries()].map(([id, d]) => [id, d.bytes]),
+    pages: S.pages.map((p) => ({ ...p, items: p.items.map((it) => ({ ...it })) })),
+  };
+}
+
+async function recSave(id) {
+  if (!recEnabled() || !S.pages.length) return;
+  try {
+    const proj = recProject();
+    const size = proj.docs.reduce((s, [, b]) => s + b.byteLength, 0);
+    // navigator.storage n'existe pas partout ; son absence n'empêche rien
+    const est = await navigator.storage?.estimate?.().catch(() => null);
+    if (est && est.quota && est.usage + size > est.quota * 0.9) { await recTrim(); }
+    const thumb = await recThumb();
+    await recTx("readwrite", (st) => st.put({
+      id, name: S.name, size, opened: Date.now(), thumb, project: proj,
+    }));
+    await recTrim();
+  } catch (e) {
+    // un quota atteint ou un magasin refusé ne doit jamais gêner l'édition
+    console.warn("récents : enregistrement impossible", e);
+  }
+}
+
+async function recThumb() {
+  const p = S.pages[0]; if (!p) return null;
+  try {
+    const c = await pageToCanvas(p, 180);
+    return c.toDataURL("image/jpeg", 0.7);
+  } catch { return null; }
+}
+
+// l'enregistrement suit les gestes, mais de loin : inutile d'écrire 20 Mo à
+// chaque point d'un tracé au stylo
+let recTimer;
+function recTouch() {
+  if (!recEnabled()) return;
+  const tab = TABS[active]; if (!tab) return;
+  clearTimeout(recTimer);
+  recTimer = setTimeout(() => recSave(tab.id), 2000);
+}
+
+async function recOpenEntry(id) {
+  const r = await recTx("readonly", (st) => st.get(id));
+  if (!r) { toast("Ce document n'est plus disponible."); return; }
+  busy(true, "Réouverture…");
+  try {
+    const t = { id: "t" + Date.now(), state: newState(r.project.name) };
+    TABS.push(t); active = TABS.length - 1; S = t.state;
+    for (const [docId, bytes] of r.project.docs) {
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      S.docs.set(docId, { bytes: u8, pdfjs: await pdfjsLib.getDocument({ data: u8.slice(0) }).promise });
+    }
+    S.pages = r.project.pages;
+    S.cur = Math.min(r.project.cur || 0, S.pages.length - 1);
+    S.meta = r.project.meta || null;
+    drawTabs(); buildRail(); await renderMain(); syncChrome();
+    toast("Document rouvert avec vos annotations.");
+  } catch (e) { console.error(e); toast("La réouverture a échoué."); }
+  finally { busy(false); }
+}
+
+async function drawRecents() {
+  const box = $("#recents");
+  if (!recEnabled()) { box.hidden = true; return; }
+  let list = [];
+  try { list = await recAll(); }
+  catch { recBroken = true; box.hidden = true; return; }
+  box.hidden = false;
+  $("#rec-list").innerHTML = "";
+  $("#rec-empty").hidden = list.length > 0;
+  $("#rec-clear").hidden = list.length === 0;
+  for (const r of list) {
+    const el = document.createElement("button");
+    el.className = "rec";
+    el.innerHTML = `<img alt="">
+      <span class="rec-t"><b></b><small></small></span>`;
+    if (r.thumb) $("img", el).src = r.thumb;
+    $("b", el).textContent = r.name;
+    $("small", el).textContent =
+      `${new Date(r.opened).toLocaleDateString("fr-FR")} · ${(r.size / 1e6).toFixed(1)} Mo`;
+    el.addEventListener("click", () => recOpenEntry(r.id));
+    $("#rec-list").appendChild(el);
+  }
+}
+
+async function recClear() {
+  if (!confirm("Effacer tous les documents conservés sur cet ordinateur ?")) return;
+  try { await recTx("readwrite", (st) => st.clear()); } catch (e) { console.warn(e); }
+  drawRecents();
+  toast("Liste vidée.");
+}
 
 /* ---------------------------------------------------------- signatures */
 const SIG_KEY = "plume.signatures.v1";
@@ -1413,24 +2152,75 @@ $("#imp-save").addEventListener("click", () => {
 });
 
 /* -------------------------------------------------------------- export */
+
+/* Un cache est un rectangle posé PAR-DESSUS la page : le texte qu'il recouvre
+   reste dans le PDF et se copie encore. Pour que « masquer » veuille bien dire
+   masquer, une page portant un cache est rendue en image — caches compris —
+   puis réintégrée : ce qui était dessous n'existe plus dans le fichier produit.
+
+   Les autres pages sont recopiées telles quelles et gardent leur texte
+   sélectionnable et recherchable ; on ne paie l'aplatissement que là où il
+   protège quelque chose. */
+const hasMask = (p) => p.items.some((it) => it.kind === "mask");
+const FLATTEN_W = 2200;   // ≈190 ppp sur une A4 : lisible sans alourdir démesurément
+
+async function flattenPage(out, p) {
+  const c = await pageToCanvas(p, FLATTEN_W);
+  const jpg = await out.embedJpg(c.toDataURL("image/jpeg", 0.92));
+  // pageToCanvas a déjà rendu la page avec `rotation: p.rot` et dessiné les
+  // objets par-dessus : la rotation est cuite dans l'image et les objets y
+  // sont. La page produite est donc droite, aux dimensions AFFICHÉES, et ne
+  // reçoit ni setRotation() ni un second dessin des objets.
+  const page = out.addPage([viewW(p), viewH(p)]);
+  page.drawImage(jpg, { x: 0, y: 0, width: viewW(p), height: viewH(p) });
+}
+
 async function buildPdf(pages) {
   const out = await PDFDocument.create();
+  if (S.meta?.title) out.setTitle(safeText(S.meta.title));
+  if (S.meta?.author) out.setAuthor(safeText(S.meta.author));
   const helv = await out.embedFont(StandardFonts.Helvetica);
   const bold = await out.embedFont(StandardFonts.HelveticaBold);
   const sources = new Map();
   for (const p of pages) {
-    if (!sources.has(p.docId)) {
+    if (!sources.has(p.docId) && !hasMask(p)) {
       sources.set(p.docId, await PDFDocument.load(S.docs.get(p.docId).bytes, { ignoreEncryption: true }));
     }
   }
   for (const p of pages) {
+    if (hasMask(p)) { await flattenPage(out, p); continue; }
     const [copied] = await out.copyPages(sources.get(p.docId), [p.index]);
     const page = out.addPage(copied);
     page.setRotation(degrees(p.rot));
     const rot = degrees(p.rot);
 
     for (const it of p.items) {
-      if (it.kind === "mask") {
+      if (isPath(it)) {
+        /* Un tracé est défini par ses points : les convertir un à un suffit,
+           et il n'y a pas d'orientation à compenser comme pour un texte ou une
+           image — la forme est déjà décrite dans l'espace d'arrivée. */
+        const q = it.pts.map(([x, y]) => { const o = viewToPdf(p, x, y); return [o.x, o.y]; });
+        const seg = (a, b) => page.drawLine({
+          start: { x: a[0], y: a[1] }, end: { x: b[0], y: b[1] },
+          thickness: it.width || 2, color: hexRgb(it.color), lineCap: 1,
+        });
+        for (let i = 1; i < q.length; i++) seg(q[i - 1], q[i]);
+        if (it.kind === "arrow" && q.length === 2) {
+          for (const t of arrowHead(q[0], q[1], it.width || 2)) seg(t, q[1]);
+        }
+      } else if (it.kind === "highlight") {
+        const o = viewToPdf(p, it.x, it.y + it.h);
+        page.drawRectangle({
+          x: o.x, y: o.y, width: it.w, height: it.h,
+          color: hexRgb(it.color), opacity: HL_OPACITY, rotate: rot,
+        });
+      } else if (it.kind === "rect") {
+        const o = viewToPdf(p, it.x, it.y + it.h);
+        page.drawRectangle({
+          x: o.x, y: o.y, width: it.w, height: it.h,
+          borderColor: hexRgb(it.color), borderWidth: it.width || 2, rotate: rot,
+        });
+      } else if (it.kind === "mask") {
         const o = viewToPdf(p, it.x, it.y + it.h);
         page.drawRectangle({ x: o.x, y: o.y, width: it.w, height: it.h, color: hexRgb(it.color), rotate: rot });
       } else if (it.kind === "text") {
@@ -1457,8 +2247,14 @@ const stem = () => S.name.replace(/\.pdf$/i, "");
 
 async function exportPdf(pages, suffix) {
   if (!pages.length) { toast("Cochez d'abord des pages dans la colonne de gauche."); return; }
-  busy(true, "Écriture du PDF…");
-  try { download(await buildPdf(pages), stem() + suffix, "application/pdf"); toast("PDF enregistré."); }
+  const aplaties = pages.filter(hasMask).length;
+  busy(true, aplaties ? "Aplatissement des pages masquées…" : "Écriture du PDF…");
+  try {
+    download(await buildPdf(pages), stem() + suffix, "application/pdf");
+    toast(aplaties
+      ? `PDF enregistré. ${aplaties} page(s) aplatie(s) : le texte sous les caches a été supprimé.`
+      : "PDF enregistré.", aplaties ? 4200 : 2600);
+  }
   catch (e) { console.error(e); toast("L'enregistrement a échoué."); }
   finally { busy(false); }
 }
@@ -1491,7 +2287,31 @@ async function pageToCanvas(p, targetW = 1500) {
   await pg.render({ canvasContext: ctx, viewport: vp }).promise;
   // les objets ajoutés sont dessinés par-dessus, aux mêmes proportions
   for (const it of p.items) {
-    if (it.kind === "mask") {
+    if (isPath(it)) {
+      ctx.strokeStyle = it.color;
+      ctx.lineWidth = (it.width || 2) * scale;
+      ctx.lineCap = ctx.lineJoin = "round";
+      const trace = (q) => {
+        ctx.beginPath();
+        q.forEach(([x, y], i) => ctx[i ? "lineTo" : "moveTo"](x * scale, y * scale));
+        ctx.stroke();
+      };
+      trace(it.pts);
+      if (it.kind === "arrow") {
+        const [a, c] = arrowHead(it.pts[0], it.pts[1], it.width || 2);
+        trace([a, it.pts[1], c]);
+      }
+    } else if (it.kind === "highlight") {
+      ctx.save();
+      ctx.globalAlpha = HL_OPACITY;
+      ctx.fillStyle = it.color;
+      ctx.fillRect(it.x * scale, it.y * scale, it.w * scale, it.h * scale);
+      ctx.restore();
+    } else if (it.kind === "rect") {
+      ctx.strokeStyle = it.color;
+      ctx.lineWidth = (it.width || 2) * scale;
+      ctx.strokeRect(it.x * scale, it.y * scale, it.w * scale, it.h * scale);
+    } else if (it.kind === "mask") {
       ctx.fillStyle = it.color;
       ctx.fillRect(it.x * scale, it.y * scale, it.w * scale, it.h * scale);
     } else if (it.kind === "text") {
@@ -1660,7 +2480,10 @@ $("#export-pop").addEventListener("click", (e) => {
 /* -------------------------------------------------------------- chrome */
 function syncChrome() {
   const has = S.pages.length > 0;
-  ["btn-export", "btn-merge"].forEach((id) => ($("#" + id).disabled = !has));
+  ["btn-export", "btn-merge", "btn-dup", "btn-numbers", "btn-watermark", "btn-print"]
+    .forEach((id) => ($("#" + id).disabled = !has));
+  $("#btn-undo").disabled = !S.undo.length;
+  $("#btn-redo").disabled = !S.redo.length;
   $('[data-exp="sel"]').disabled = S.picked.size === 0;
   $("#pos").textContent = has ? `${S.cur + 1} / ${S.pages.length}` : "—";
   $("#zoom").textContent = Math.round(S.scale * 100) + " %";
@@ -1696,6 +2519,23 @@ $("#file-img").addEventListener("change", (e) => {
 
 $("#btn-open").addEventListener("click", () => $("#file-pdf").click());
 $("#btn-open-2").addEventListener("click", () => $("#file-pdf").click());
+let findDebounce;
+$("#find-q").addEventListener("input", (e) => {
+  clearTimeout(findDebounce);
+  const q = e.target.value;
+  findDebounce = setTimeout(() => runFind(q), 220);
+});
+$("#find-q").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  goToHit(FIND.at + (e.shiftKey ? -1 : 1));
+});
+$("#find-prev").addEventListener("click", () => goToHit(FIND.at - 1));
+$("#find-next").addEventListener("click", () => goToHit(FIND.at + 1));
+$("#find-mask").addEventListener("click", maskAllHits);
+
+$("#btn-undo").addEventListener("click", undo);
+$("#btn-redo").addEventListener("click", redo);
 $("#btn-merge").addEventListener("click", () => $("#file-merge").click());
 $("#file-pdf").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) loadPdf(f, false); });
 $("#file-merge").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) loadPdf(f, true); });
@@ -1703,6 +2543,18 @@ $("#btn-newsig").addEventListener("click", openPad);
 
 $("#btn-rot-l").addEventListener("click", () => S.pages[S.cur] && rotatePage(S.pages[S.cur], -1));
 $("#btn-rot-r").addEventListener("click", () => S.pages[S.cur] && rotatePage(S.pages[S.cur], 1));
+$("#btn-dup").addEventListener("click", duplicatePage);
+$("#btn-blank").addEventListener("click", insertBlank);
+$("#btn-insert").addEventListener("click", () => $("#file-insert").click());
+$("#file-insert").addEventListener("change", (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  // « ici » veut dire juste après la page affichée
+  if (f) loadPdf(f, true, S.pages.length ? S.cur + 1 : 0);
+});
+$("#btn-numbers").addEventListener("click", numberPages);
+$("#btn-watermark").addEventListener("click", addWatermark);
+$("#btn-meta").addEventListener("click", editMeta);
+$("#btn-print").addEventListener("click", printDoc);
 $("#btn-del").addEventListener("click", () => S.pages[S.cur] && removePages([S.pages[S.cur].uid]));
 $("#btn-del-sel").addEventListener("click", () => removePages([...S.picked]));
 $("#btn-all").addEventListener("click", () => { S.pages.forEach((p) => S.picked.add(p.uid)); buildRail(); syncChrome(); });
@@ -1719,6 +2571,10 @@ $("#zoom-fit").addEventListener("click", () => {
 });
 
 window.addEventListener("keydown", (e) => {
+  // Cmd+F doit fonctionner même depuis un champ, pour revenir à la recherche
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+    e.preventDefault(); $("#find-q").focus(); $("#find-q").select(); return;
+  }
   const editing = document.activeElement?.isContentEditable ||
     ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
   if (editing) return;
@@ -1726,11 +2582,24 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "ArrowLeft" || e.key === "PageUp") goTo(S.cur - 1);
   if ((e.key === "Delete" || e.key === "Backspace") && S.sel) {
     const p = S.pages[S.cur];
+    snapshot();
     p.items = p.items.filter((x) => x.id !== S.sel);
-    S.sel = null; paintItems(); e.preventDefault();
+    S.sel = null; paintItems(); syncChrome(); e.preventDefault();
   }
   if (e.key === "Escape") { PENDING = null; $("#overlay").classList.remove("placing"); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); exportPdf(S.pages, " - modifie.pdf"); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "p") { e.preventDefault(); printDoc(); }
+});
+
+/* Quand « Récents » conserve le travail, fermer l'onglet ne perd rien et
+   l'avertissement serait du bruit. Sans lui — coupé par l'utilisateur, ou
+   IndexedDB refusé par le navigateur — tout serait perdu sans un mot. */
+window.addEventListener("beforeunload", (e) => {
+  if (!recEnabled() && TABS.some((t) => t.state.pages.length)) e.preventDefault();
 });
 
 /* glisser-déposer d'un PDF sur la fenêtre */
@@ -1741,9 +2610,20 @@ window.addEventListener("drop", (e) => {
   if (f) loadPdf(f, S.pages.length > 0 && e.shiftKey);
 });
 
+$("#rec-off").checked = localStorage.getItem(REC_OFF) === "1";
+$("#rec-off").addEventListener("change", (e) => {
+  localStorage.setItem(REC_OFF, e.target.checked ? "1" : "0");
+  // couper la conservation efface aussi ce qui était déjà là : laisser des
+  // documents derrière soi contredirait ce que la case promet
+  if (e.target.checked) recTx("readwrite", (st) => st.clear()).catch(() => {});
+  drawRecents();
+});
+$("#rec-clear").addEventListener("click", recClear);
+
 loadSigs();
 drawTabs();
 syncChrome();
+drawRecents();
 
 // installe l'app hors connexion une fois ouverte depuis le web ; sur la
 // version autonome ouverte en file://, ce garde-fou évite une erreur inutile
