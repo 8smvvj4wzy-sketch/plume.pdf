@@ -280,6 +280,8 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
   <div class="brand"><b>Plume</b><span>éditeur pdf local</span></div>
   <div class="actions">
     <button class="btn" id="btn-open">Ouvrir un PDF</button>
+    <button class="btn ghost" id="btn-undo" title="Annuler (Cmd+Z)" disabled>↶</button>
+    <button class="btn ghost" id="btn-redo" title="Rétablir (Cmd+Maj+Z)" disabled>↷</button>
     <button class="btn ghost" id="btn-merge" disabled>Ajouter au projet</button>
     <div class="menu">
       <button class="btn primary" id="btn-export" disabled>Exporter ▾</button>
@@ -453,8 +455,11 @@ function newState(name) {
     sel: null,           // uid de l'objet sélectionné
     name: name || "Nouveau projet",
     picked: new Set(),   // uid des pages cochées
+    undo: [],            // instantanés antérieurs, le plus récent en dernier
+    redo: [],
   };
 }
+const UNDO_MAX = 50;
 const TABS = [];         // [{ id, state }]
 let active = -1;
 let S = newState();
@@ -464,6 +469,47 @@ let PENDING = null;      // objet en attente de pose
 let uid = 0;
 const nextId = () => "o" + ++uid;
 let renderToken = 0;
+
+/* --------------------------------------------------- annuler / rétablir
+   Un instantané retient l'ordre des pages, leur rotation et leurs objets —
+   tout ce qui se répare. `S.docs` n'est jamais touché : les octets des PDF
+   chargés ne changent pas, seule leur mise en scène change.
+
+   Le clonage est volontairement superficiel sur les objets : `{...it}` partage
+   la chaîne `src` d'une signature au lieu de la recopier. structuredClone
+   dupliquerait ces dataURL, souvent lourdes, à chaque geste. */
+function pageSnapshot() {
+  return {
+    cur: S.cur,
+    picked: [...S.picked],
+    pages: S.pages.map((p) => ({ ...p, items: p.items.map((it) => ({ ...it })) })),
+  };
+}
+function pushSnapshot(snap) {
+  S.undo.push(snap);
+  if (S.undo.length > UNDO_MAX) S.undo.shift();
+  S.redo.length = 0;   // une nouvelle action ferme la branche des rétablissements
+  syncChrome();
+}
+// à appeler AVANT la mutation
+const snapshot = () => pushSnapshot(pageSnapshot());
+function applySnapshot(snap) {
+  S.pages = snap.pages;
+  S.cur = Math.min(snap.cur, Math.max(0, snap.pages.length - 1));
+  S.picked = new Set(snap.picked);
+  S.sel = null;
+  buildRail(); renderMain(); syncChrome();
+}
+function undo() {
+  if (!S.undo.length) return;
+  S.redo.push(pageSnapshot());
+  applySnapshot(S.undo.pop());
+}
+function redo() {
+  if (!S.redo.length) return;
+  S.undo.push(pageSnapshot());
+  applySnapshot(S.redo.pop());
+}
 
 /* ------------------------------------------------------------ utilitaires */
 function toast(msg, ms = 2600) {
@@ -654,6 +700,7 @@ function wireRailDrag() {
       const after = el.classList.contains("drop-after");
       el.classList.remove("drop-before", "drop-after");
       if (!dragged || dragged === el) return;
+      snapshot();
       const from = S.pages.findIndex((p) => p.uid === dragged.dataset.uid);
       let to = S.pages.findIndex((p) => p.uid === el.dataset.uid) + (after ? 1 : 0);
       if (from < to) to--; // le retrait décale d'un cran tous les index qui le suivaient
@@ -705,6 +752,7 @@ function goTo(i) {
 }
 
 function rotatePage(p, dir) {
+  snapshot();
   turnItems(p, dir);
   p.rot = (p.rot + (dir > 0 ? 90 : 270)) % 360;
   refreshThumb(p);
@@ -714,6 +762,7 @@ function rotatePage(p, dir) {
 function removePages(uids) {
   if (!uids.length) return;
   if (S.pages.length - uids.length < 1) { toast("Un document doit garder au moins une page."); return; }
+  snapshot();
   const set = new Set(uids);
   S.pages = S.pages.filter((p) => !set.has(p.uid));
   uids.forEach((u) => S.picked.delete(u));
@@ -759,7 +808,8 @@ function paintItems() {
     kill.className = "kill"; kill.textContent = "✕"; kill.title = "Supprimer";
     kill.addEventListener("pointerdown", (e) => e.stopPropagation());
     kill.addEventListener("click", () => {
-      p.items = p.items.filter((x) => x !== it); S.sel = null; paintItems();
+      snapshot();
+      p.items = p.items.filter((x) => x !== it); S.sel = null; paintItems(); syncChrome();
     });
     el.appendChild(kill);
 
@@ -785,12 +835,18 @@ function startMove(e, it, el) {
   S.sel = it.id;
   $("#overlay").querySelectorAll(".item").forEach((n) => n.classList.toggle("sel", n === el));
   const s = S.scale, x0 = e.clientX, y0 = e.clientY, ix = it.x, iy = it.y;
+  // l'instantané est pris avant le geste mais empilé seulement s'il a servi :
+  // un simple clic de sélection ne doit pas remplir la pile d'annulation
+  const avant = pageSnapshot();
   const move = (ev) => {
     it.x = Math.max(0, ix + (ev.clientX - x0) / s);
     it.y = Math.max(0, iy + (ev.clientY - y0) / s);
     el.style.left = it.x * s + "px"; el.style.top = it.y * s + "px";
   };
-  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  const up = () => {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+    if (it.x !== ix || it.y !== iy) pushSnapshot(avant);
+  };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
 }
 
@@ -798,21 +854,29 @@ function startResize(e, it, el) {
   e.preventDefault(); e.stopPropagation();
   const s = S.scale, x0 = e.clientX, y0 = e.clientY, w0 = it.w, h0 = it.h;
   const ratio = h0 / w0, keep = it.kind !== "mask";
+  const avant = pageSnapshot();
   const move = (ev) => {
     let w = Math.max(12, w0 + (ev.clientX - x0) / s);
     let h = keep ? w * ratio : Math.max(8, h0 + (ev.clientY - y0) / s);
     it.w = w; it.h = h;
     el.style.width = w * s + "px"; el.style.height = h * s + "px";
   };
-  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  const up = () => {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+    if (it.w !== w0 || it.h !== h0) pushSnapshot(avant);
+  };
   window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
 }
 
 function editing() { return $('#overlay [contenteditable="true"]'); }
 
-function editText(el, it) {
+// `fresh` : le texte vient d'être créé, la pose a déjà posé son instantané et
+// la première frappe ne doit pas en ajouter un second.
+function editText(el, it, fresh = false) {
   const t = $(".txt", el);
   if (t.getAttribute("contenteditable") === "true") return;
+  const avant = fresh ? null : pageSnapshot();
+  const texte0 = it.text;
   t.contentEditable = "true";
   // le focus est posé après le cycle de l'événement : sinon l'action par défaut
   // du clic le reprend aussitôt et le champ se referme sans rien garder.
@@ -833,6 +897,7 @@ function editText(el, it) {
       const p = S.pages[S.cur]; p.items = p.items.filter((x) => x !== it);
       S.sel = null;
     }
+    if (avant && it.text !== texte0) pushSnapshot(avant);
     paintItems();
   };
   t.addEventListener("blur", done, { once: true });
@@ -856,6 +921,7 @@ $("#overlay").addEventListener("pointerdown", (e) => {
     // centré sur le clic, pas calé sous le coin haut-gauche du curseur
     const ix = Math.max(0, x - PENDING.w / 2), iy = Math.max(0, y - PENDING.h / 2);
     const it = { id: nextId(), kind: "image", src: PENDING.src, x: ix, y: iy, w: PENDING.w, h: PENDING.h };
+    snapshot();
     p.items.push(it); PENDING = null; S.sel = it.id;
     $("#overlay").classList.remove("placing");
     paintItems(); toast("Objet posé. Faites glisser pour ajuster.");
@@ -866,8 +932,9 @@ $("#overlay").addEventListener("pointerdown", (e) => {
       id: nextId(), kind: "text", x, y, text: "Texte",
       size: +$("#fsize").value || 12, color: $("#fcolor").value, bold: $("#fbold").checked,
     };
+    snapshot();
     measure(it); p.items.push(it); S.sel = it.id; paintItems();
-    const el = $(`.item[data-id="${it.id}"]`); if (el) editText(el, it);
+    const el = $(`.item[data-id="${it.id}"]`); if (el) editText(el, it, true);
     return;
   }
   if (TOOL === "mask") {
@@ -888,6 +955,7 @@ $("#overlay").addEventListener("pointerdown", (e) => {
       const cx = (ev.clientX - rect.left) / S.scale, cy = (ev.clientY - rect.top) / S.scale;
       const w = Math.abs(cx - x), h = Math.abs(cy - y);
       if (w < 4 || h < 4) return;
+      snapshot();
       p.items.push({ id: nextId(), kind: "mask", x: Math.min(x, cx), y: Math.min(y, cy), w, h, color: "#FFFFFF" });
       paintItems();
     };
@@ -1669,6 +1737,8 @@ $("#export-pop").addEventListener("click", (e) => {
 function syncChrome() {
   const has = S.pages.length > 0;
   ["btn-export", "btn-merge"].forEach((id) => ($("#" + id).disabled = !has));
+  $("#btn-undo").disabled = !S.undo.length;
+  $("#btn-redo").disabled = !S.redo.length;
   $('[data-exp="sel"]').disabled = S.picked.size === 0;
   $("#pos").textContent = has ? `${S.cur + 1} / ${S.pages.length}` : "—";
   $("#zoom").textContent = Math.round(S.scale * 100) + " %";
@@ -1704,6 +1774,8 @@ $("#file-img").addEventListener("change", (e) => {
 
 $("#btn-open").addEventListener("click", () => $("#file-pdf").click());
 $("#btn-open-2").addEventListener("click", () => $("#file-pdf").click());
+$("#btn-undo").addEventListener("click", undo);
+$("#btn-redo").addEventListener("click", redo);
 $("#btn-merge").addEventListener("click", () => $("#file-merge").click());
 $("#file-pdf").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) loadPdf(f, false); });
 $("#file-merge").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) loadPdf(f, true); });
@@ -1734,11 +1806,23 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "ArrowLeft" || e.key === "PageUp") goTo(S.cur - 1);
   if ((e.key === "Delete" || e.key === "Backspace") && S.sel) {
     const p = S.pages[S.cur];
+    snapshot();
     p.items = p.items.filter((x) => x.id !== S.sel);
-    S.sel = null; paintItems(); e.preventDefault();
+    S.sel = null; paintItems(); syncChrome(); e.preventDefault();
   }
   if (e.key === "Escape") { PENDING = null; $("#overlay").classList.remove("placing"); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); exportPdf(S.pages, " - modifie.pdf"); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+  }
+});
+
+/* Rien n'est enregistré côté serveur — par construction — et rien ne l'est non
+   plus sur cette machine tant que « Récents » ne prend pas le relais : fermer
+   l'onglet perdait tout le travail sans un mot. */
+window.addEventListener("beforeunload", (e) => {
+  if (TABS.some((t) => t.state.pages.length)) e.preventDefault();
 });
 
 /* glisser-déposer d'un PDF sur la fenêtre */

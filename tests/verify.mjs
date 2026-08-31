@@ -259,7 +259,74 @@ async function testRendu() {
   await context.close();
 }
 
-/* ------------------------------------------------- 5. version autonome */
+/* ------------------------------------------------ 5. annuler / rétablir */
+
+/* Enchaîne des gestes de natures différentes, puis affirme qu'une empreinte
+   de l'état revient à l'identique après N annulations, et de nouveau après N
+   rétablissements. L'empreinte porte sur ce qui se répare : l'ordre des
+   pages, leur rotation et leurs objets. */
+async function testAnnuler() {
+  section("Annuler / rétablir");
+  const { context, page } = await openApp();
+  await loadFixture(page);
+
+  const res = await page.evaluate(async () => {
+    const empreinte = () => JSON.stringify(S.pages.map((p) => ({
+      uid: p.uid, rot: p.rot,
+      items: p.items.map((it) => ({ ...it, src: it.src ? "…" : undefined })),
+    })));
+
+    const etats = [empreinte()];
+    const p = () => S.pages[S.cur];
+
+    snapshot(); p().items.push({ id: "t", kind: "text", x: 40, y: 40, text: "A", size: 12, color: "#000", bold: false, w: 6, h: 15 });
+    etats.push(empreinte());
+    snapshot(); p().items.push({ id: "m", kind: "mask", x: 10, y: 10, w: 50, h: 20, color: "#FFFFFF" });
+    etats.push(empreinte());
+    snapshot(); p().items[0].x = 200;                      // déplacement
+    etats.push(empreinte());
+    rotatePage(p(), 1);                                     // rotation (snapshot interne)
+    etats.push(empreinte());
+    snapshot(); S.pages.reverse();                          // réordonnancement
+    etats.push(empreinte());
+    removePages([S.pages[0].uid]);                          // suppression (snapshot interne)
+    etats.push(empreinte());
+
+    const n = etats.length - 1;
+    const remonte = [];
+    for (let i = 0; i < n; i++) { undo(); remonte.push(empreinte()); }
+    const redescend = [];
+    for (let i = 0; i < n; i++) { redo(); redescend.push(empreinte()); }
+
+    return {
+      n,
+      // après i+1 annulations on doit retrouver l'état etats[n-1-i]
+      annule: remonte.every((e, i) => e === etats[n - 1 - i]),
+      retabli: redescend.every((e, i) => e === etats[i + 1]),
+      depart: remonte[n - 1] === etats[0],
+      arrivee: redescend[n - 1] === etats[n],
+      undoVide: S.undo.length > 0,
+    };
+  });
+
+  check(`${res.n} gestes annulés un à un retrouvent chaque état antérieur`, res.annule);
+  check("la dernière annulation retrouve le document d'origine", res.depart);
+  check(`${res.n} rétablissements retrouvent chaque état`, res.retabli);
+  check("le dernier rétablissement retrouve l'état final", res.arrivee);
+
+  // un clic de sélection ne doit pas empiler d'instantané
+  const bruit = await page.evaluate(() => {
+    const avant = S.undo.length;
+    const el = document.querySelector(".item");
+    if (el) el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: 5, clientY: 5 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 5, clientY: 5 }));
+    return S.undo.length - avant;
+  });
+  check("un clic sans déplacement ne remplit pas la pile", bruit === 0, "delta " + bruit);
+  await context.close();
+}
+
+/* ------------------------------------------------- 6. version autonome */
 
 async function testAutonome() {
   section("Version autonome");
@@ -285,6 +352,7 @@ const SUITE = [
   ["coordonnees", testCoordonnees],
   ["rotation", testInvariantRotation],
   ["rendu", testRendu],
+  ["annuler", testAnnuler],
   ["autonome", testAutonome],
 ];
 
