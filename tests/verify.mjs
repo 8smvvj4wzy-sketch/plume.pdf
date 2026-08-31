@@ -343,7 +343,95 @@ async function testCaviardage() {
   await context.close();
 }
 
-/* ------------------------------------------------ 6. annuler / rétablir */
+/* -------------------------------------------------------- 6. recherche */
+
+/* Le jeu d'essai porte le marqueur deux fois par page, sur deux pages : la
+   recherche doit en trouver quatre, et « caviarder toutes les occurrences »
+   doit poser quatre caches qu'une seule annulation retire. Le tout rejoué sur
+   une page pivotée, où les coordonnées des fragments changent. */
+async function testRecherche() {
+  section("Recherche");
+  const { context, page } = await openApp();
+  await loadFixture(page, "MARQUEUR");
+
+  for (const rot of [0, 90, 270]) {
+    const res = await page.evaluate(async (rot) => {
+      S.pages.forEach((p) => { p.rot = rot; p.items = []; });
+      await runFind("MARQUEUR");
+      const n = FIND.hits.length;
+      // toutes les occurrences doivent tomber dans les limites de leur page
+      const dedans = FIND.hits.every((h) => {
+        const p = S.pages.find((x) => x.uid === h.uid);
+        return h.x >= -2 && h.y >= -2 && h.w > 0 && h.h > 0 &&
+               h.x + h.w <= viewW(p) + 2 && h.y + h.h <= viewH(p) + 2;
+      });
+
+      const avant = S.undo.length;
+      maskAllHits();
+      const caches = S.pages.reduce((s, p) => s + p.items.filter((i) => i.kind === "mask").length, 0);
+      const pile = S.undo.length - avant;
+      undo();
+      const apres = S.pages.reduce((s, p) => s + p.items.filter((i) => i.kind === "mask").length, 0);
+      return { n, dedans, caches, pile, apres };
+    }, rot);
+
+    check(`rot ${rot}° — 4 occurrences trouvées (${res.n})`, res.n === 4);
+    check(`rot ${rot}° — toutes tiennent dans les limites de leur page`, res.dedans);
+    check(`rot ${rot}° — 4 caches posés (${res.caches})`, res.caches === 4);
+    check(`rot ${rot}° — une seule annulation les retire tous`, res.pile === 1 && res.apres === 0,
+      `pile +${res.pile}, restants ${res.apres}`);
+  }
+
+  /* Tenir dans la page ne prouve pas tomber SUR le mot. On rend donc la page
+     et on regarde l'encre sous chaque rectangle : un surlignage bien posé
+     recouvre des pixels sombres, un rectangle égaré tomberait sur du papier
+     blanc. (Vérifier plutôt que le mot disparaît du PDF exporté ne prouverait
+     rien ici : la page entière est aplatie dès qu'elle porte un cache.) */
+  for (const rot of [0, 90, 180, 270]) {
+    const res = await page.evaluate(async (rot) => {
+      S.pages.forEach((p) => { p.rot = rot; p.items = []; });
+      await runFind("MARQUEUR");
+
+      const p = S.pages[0];
+      const c = await pageToCanvas(p, 1600);
+      const k = c.width / viewW(p);
+      const ctx = c.getContext("2d");
+      const encre = (h) => {
+        const d = ctx.getImageData(Math.round(h.x * k), Math.round(h.y * k),
+                                   Math.max(1, Math.round(h.w * k)),
+                                   Math.max(1, Math.round(h.h * k))).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] < 128) n++;
+        return n;
+      };
+      return FIND.hits.filter((h) => h.uid === p.uid).map(encre);
+    }, rot);
+
+    check(`rot ${rot}° — chaque surlignage recouvre du texte (encre : ${res.join(", ")})`,
+      res.length > 0 && res.every((n) => n > 15));
+  }
+
+  // ce qui n'existe pas ne doit rien renvoyer, sans casser
+  const vide = await page.evaluate(async () => {
+    await runFind("CHAINEABSENTE");
+    return { n: FIND.hits.length, libelle: document.querySelector("#find-count").textContent };
+  });
+  check("une chaîne absente ne renvoie rien", vide.n === 0);
+  check("l'absence est dite à l'utilisateur", /aucune/i.test(vide.libelle), vide.libelle);
+
+  // les occurrences ne doivent pas se reporter d'un onglet à l'autre
+  const onglets = await page.evaluate(async () => {
+    await runFind("MARQUEUR");
+    const avant = FIND.hits.length;
+    switchTab(0);
+    return { avant, apres: FIND.hits.length };
+  });
+  check("changer d'onglet remet la recherche à zéro",
+    onglets.avant > 0 && onglets.apres === 0);
+  await context.close();
+}
+
+/* ------------------------------------------------ 7. annuler / rétablir */
 
 /* Enchaîne des gestes de natures différentes, puis affirme qu'une empreinte
    de l'état revient à l'identique après N annulations, et de nouveau après N
@@ -437,6 +525,7 @@ const SUITE = [
   ["rotation", testInvariantRotation],
   ["rendu", testRendu],
   ["caviardage", testCaviardage],
+  ["recherche", testRecherche],
   ["annuler", testAnnuler],
   ["autonome", testAutonome],
 ];

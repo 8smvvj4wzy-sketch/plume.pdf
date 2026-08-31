@@ -177,6 +177,9 @@ main{flex:1;display:flex;min-height:0}
 }
 .item.sel .kill{display:grid}
 #band{position:absolute;border:1px solid var(--accent-hi);background:rgba(46,131,128,.18);display:none;pointer-events:none}
+/* occurrences de la recherche : sous les objets posés, et jamais cliquables */
+.hit{position:absolute;background:rgba(255,214,0,.42);pointer-events:none;border-radius:2px}
+.hit.on{background:rgba(255,138,0,.62);box-shadow:0 0 0 1px rgba(120,60,0,.5)}
 
 /* panneau droit */
 #panel{
@@ -328,6 +331,19 @@ footer .btn{padding:3px 9px;font-family:var(--ui)}
         <button class="tool" data-tool="mask">Caviarder<small>le texte est supprimé</small></button>
         <button class="tool" data-tool="image">Image<small>logo, tampon</small></button>
       </div>
+    </div>
+
+    <div class="sec">
+      <h3>Rechercher</h3>
+      <div class="row">
+        <input type="text" id="find-q" placeholder="Mot ou expression" style="flex:1;min-width:0">
+      </div>
+      <div class="row"><span id="find-count" class="hint" style="flex:1;margin:0">—</span>
+        <button class="btn" id="find-prev" title="Précédent (Maj+Entrée)" disabled>◀</button>
+        <button class="btn" id="find-next" title="Suivant (Entrée)" disabled>▶</button>
+      </div>
+      <button class="btn" id="find-mask" style="width:100%" disabled>Caviarder toutes les occurrences</button>
+      <p class="hint" style="margin-top:8px">Cmd+F. La recherche ne franchit pas les coupures que le PDF pose au milieu des mots ; un scan sans couche texte ne renvoie rien.</p>
     </div>
 
     <div class="sec" id="text-props">
@@ -494,6 +510,8 @@ function pushSnapshot(snap) {
 // à appeler AVANT la mutation
 const snapshot = () => pushSnapshot(pageSnapshot());
 function applySnapshot(snap) {
+  // les occurrences pointent vers l'état d'avant : les reporter serait faux
+  clearFind();
   S.pages = snap.pages;
   S.cur = Math.min(snap.cur, Math.max(0, snap.pages.length - 1));
   S.picked = new Set(snap.picked);
@@ -582,6 +600,8 @@ function switchTab(i) {
   if (i < 0 || i >= TABS.length) return;
   active = i; S = TABS[i].state;
   PENDING = null; $("#overlay").classList.remove("placing");
+  // les occurrences appartiennent au document quitté : rien à reporter ici
+  clearFind();
   drawTabs(); buildRail(); renderMain();
 }
 function closeTab(i) {
@@ -773,9 +793,19 @@ function removePages(uids) {
 /* --------------------------------------------------------- objets posés */
 function paintItems() {
   const ov = $("#overlay");
-  ov.querySelectorAll(".item").forEach((n) => n.remove());
+  ov.querySelectorAll(".item, .hit").forEach((n) => n.remove());
   const p = S.pages[S.cur]; if (!p) return;
   const s = S.scale;
+
+  // les occurrences d'abord : elles doivent rester sous les objets posés
+  FIND.hits.forEach((h, i) => {
+    if (h.uid !== p.uid) return;
+    const el = document.createElement("div");
+    el.className = "hit" + (i === FIND.at ? " on" : "");
+    el.style.left = h.x * s + "px"; el.style.top = h.y * s + "px";
+    el.style.width = h.w * s + "px"; el.style.height = h.h * s + "px";
+    ov.appendChild(el);
+  });
 
   for (const it of p.items) {
     const el = document.createElement("div");
@@ -964,6 +994,115 @@ $("#overlay").addEventListener("pointerdown", (e) => {
   }
   S.sel = null; paintItems();
 });
+
+/* ------------------------------------------------------------ recherche
+   Les occurrences sont stockées comme les objets posés : en points, origine
+   en haut à gauche, dans l'espace d'affichage de la page. C'est déjà ce que
+   donne pdf.js quand on compose la matrice du fragment avec celle d'un
+   viewport construit à l'échelle 1 et à la rotation de la page — d'où la
+   possibilité d'en faire directement des caches. */
+let FIND = { q: "", hits: [], at: -1 };
+
+async function pageHits(p, q) {
+  const pg = await S.docs.get(p.docId).pdfjs.getPage(p.index + 1);
+  const vp = pg.getViewport({ scale: 1, rotation: p.rot });
+  const tc = await pg.getTextContent();
+  const out = [];
+  for (const it of tc.items) {
+    if (!it.str) continue;
+    const bas = it.str.toLowerCase();
+    let from = 0, k;
+    while ((k = bas.indexOf(q, from)) !== -1) {
+      from = k + q.length;
+      /* m applique au fragment la matrice du viewport : (m[4], m[5]) est
+         l'origine de sa ligne de base, (m[0], m[1]) l'image de l'axe des x du
+         texte et (m[2], m[3]) celle de son axe des y.
+
+         Le rectangle est obtenu en transportant les quatre coins puis en
+         prenant leur enveloppe. Décaler simplement l'ordonnée de la hauteur
+         du texte ne marcherait qu'à 0° : sur une page pivotée, « au-dessus de
+         la ligne de base » n'est plus la direction des y. */
+      const m = pdfjsLib.Util.transform(vp.transform, it.transform);
+      const sx = Math.hypot(m[0], m[1]) || 1;   // unités de texte -> points
+      const sy = Math.hypot(m[2], m[3]) || 1;
+      // largeur au prorata des caractères : pdf.js ne mesure pas glyphe par
+      // glyphe, et l'approximation suffit largement à poser un cache
+      const par = it.width / it.str.length;
+      const u0 = (par * k) / sx, u1 = (par * (k + q.length)) / sx;
+      const v1 = (it.height || sy) / sy;
+      const coin = (u, v) => [m[4] + u * m[0] + v * m[2], m[5] + u * m[1] + v * m[3]];
+      const cs = [coin(u0, 0), coin(u1, 0), coin(u1, v1), coin(u0, v1)];
+      const xs = cs.map((c) => c[0]), ys = cs.map((c) => c[1]);
+      const x = Math.min(...xs), y = Math.min(...ys);
+      out.push({
+        uid: p.uid, x, y,
+        w: Math.max(...xs) - x, h: Math.max(...ys) - y,
+      });
+    }
+  }
+  return out;
+}
+
+async function runFind(q) {
+  FIND = { q, hits: [], at: -1 };
+  if (q.length >= 2) {
+    busy(true, "Recherche…");
+    try {
+      const bas = q.toLowerCase();
+      for (const p of S.pages) FIND.hits.push(...(await pageHits(p, bas)));
+    } catch (e) { console.error(e); }
+    finally { busy(false); }
+  }
+  if (FIND.hits.length) FIND.at = 0;
+  syncFind();
+  paintItems();
+  if (FIND.at === 0) goToHit(0);
+}
+
+function clearFind() {
+  FIND = { q: "", hits: [], at: -1 };
+  $("#find-q").value = "";
+  syncFind();
+}
+
+function syncFind() {
+  const n = FIND.hits.length;
+  $("#find-count").textContent = !FIND.q ? "—" : n ? `${FIND.at + 1} / ${n}` : "aucune occurrence";
+  ["find-prev", "find-next", "find-mask"].forEach((id) => ($("#" + id).disabled = !n));
+}
+
+function goToHit(i) {
+  const n = FIND.hits.length; if (!n) return;
+  FIND.at = ((i % n) + n) % n;
+  const h = FIND.hits[FIND.at];
+  const k = S.pages.findIndex((p) => p.uid === h.uid);
+  syncFind();
+  if (k !== -1 && k !== S.cur) { goTo(k); return; }
+  paintItems();
+  $("#overlay").querySelector(".hit.on")?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+/* Un seul instantané pour toute la série : une annulation défait le lot. */
+function maskAllHits() {
+  if (!FIND.hits.length) return;
+  snapshot();
+  const M = 1; // léger débord, pour ne pas laisser dépasser un jambage
+  let n = 0;
+  for (const h of FIND.hits) {
+    const p = S.pages.find((x) => x.uid === h.uid); if (!p) continue;
+    p.items.push({
+      id: nextId(), kind: "mask",
+      x: Math.max(0, h.x - M), y: Math.max(0, h.y - M),
+      w: h.w + 2 * M, h: h.h + 2 * M, color: "#FFFFFF",
+    });
+    n++;
+  }
+  // les occurrences sont maintenant recouvertes : les garder surlignées sous
+  // leurs propres caches n'apprendrait plus rien
+  clearFind();
+  buildRail(); renderMain(); syncChrome();
+  toast(`${n} occurrence(s) caviardée(s). Le texte partira à l'export.`, 3600);
+}
 
 /* ---------------------------------------------------------- signatures */
 const SIG_KEY = "plume.signatures.v1";
@@ -1804,6 +1943,21 @@ $("#file-img").addEventListener("change", (e) => {
 
 $("#btn-open").addEventListener("click", () => $("#file-pdf").click());
 $("#btn-open-2").addEventListener("click", () => $("#file-pdf").click());
+let findDebounce;
+$("#find-q").addEventListener("input", (e) => {
+  clearTimeout(findDebounce);
+  const q = e.target.value;
+  findDebounce = setTimeout(() => runFind(q), 220);
+});
+$("#find-q").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  goToHit(FIND.at + (e.shiftKey ? -1 : 1));
+});
+$("#find-prev").addEventListener("click", () => goToHit(FIND.at - 1));
+$("#find-next").addEventListener("click", () => goToHit(FIND.at + 1));
+$("#find-mask").addEventListener("click", maskAllHits);
+
 $("#btn-undo").addEventListener("click", undo);
 $("#btn-redo").addEventListener("click", redo);
 $("#btn-merge").addEventListener("click", () => $("#file-merge").click());
@@ -1829,6 +1983,10 @@ $("#zoom-fit").addEventListener("click", () => {
 });
 
 window.addEventListener("keydown", (e) => {
+  // Cmd+F doit fonctionner même depuis un champ, pour revenir à la recherche
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+    e.preventDefault(); $("#find-q").focus(); $("#find-q").select(); return;
+  }
   const editing = document.activeElement?.isContentEditable ||
     ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
   if (editing) return;
