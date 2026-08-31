@@ -4,6 +4,8 @@
 masquage, réorganisation des pages, export PDF, Word et PNG.
 
 Tout se passe sur votre ordinateur : aucun document n'est envoyé sur Internet.
+Les documents récents sont conservés localement pour que vous puissiez reprendre
+votre travail ; la liste se vide d'un clic, et cette conservation se coupe.
 
 ## Utiliser l'application
 
@@ -25,11 +27,25 @@ téléchargée.
   PNG, un JPEG, un WEBP, un GIF, un BMP, un SVG ou un PDF. Le fond du papier est
   retiré automatiquement et le trait ramené à un noir franc. Les signatures
   restent enregistrées pour les fois suivantes.
-- **Masquer** : recouvrir une mention d'un cache blanc.
-- **Pages** : pivoter, supprimer, réordonner par glisser-déposer, extraire une
+- **Caviarder** : recouvrir une mention. Le texte recouvert est réellement
+  supprimé du PDF produit — il ne se copie ni ne s'extrait plus. Seules les
+  pages caviardées sont converties en image ; les autres gardent leur texte
+  sélectionnable.
+- **Annoter** : stylo à main levée, surligneur, rectangle, flèche.
+- **Rechercher** (Cmd+F) : trouver un mot dans tout le document, sauter d'une
+  occurrence à l'autre, ou toutes les caviarder d'un coup.
+- **Annuler / rétablir** (Cmd+Z, Cmd+Maj+Z) sur tous les gestes.
+- **Pages** : pivoter, dupliquer, supprimer, réordonner par glisser-déposer,
+  insérer une page blanche ou un autre PDF à l'endroit voulu, extraire une
   sélection, séparer en un fichier par page, fusionner plusieurs PDF.
+- **Document** : numéroter les pages, poser un filigrane, renseigner titre et
+  auteur, imprimer (Cmd+P).
 - **Onglets** : plusieurs documents ouverts en parallèle, chacun avec ses
   annotations.
+- **Récents** : les documents ouverts sont conservés sur votre ordinateur avec
+  vos annotations, pour reprendre là où vous en étiez. Ils ne sont jamais
+  envoyés nulle part ; l'écran d'accueil permet de vider la liste ou de ne rien
+  conserver du tout.
 - **Exports** : PDF modifié, PDF partiel, un PDF par page, images PNG, Word en
   texte modifiable ou en mise en page fidèle.
 
@@ -46,11 +62,23 @@ python3 build.py
 
 Le fichier produit atterrit dans `dist/`.
 
+Pour vérifier qu'une modification n'a rien cassé :
+
+```bash
+python3 build.py && node tests/verify.mjs
+```
+
+Le script pilote un Chromium sans interface sur la version autonome et contrôle
+le placement des objets à l'export sur les quatre rotations, le caviardage, la
+recherche, l'annulation et les récents. Il demande [Playwright](https://playwright.dev/)
+(`npm i -g playwright`).
+
 ## Organisation du dépôt
 
 ```
 index.html                    l'application (charge ses bibliothèques depuis un CDN)
 build.py                      fabrique la version autonome hors ligne
+tests/verify.mjs              vérification automatisée (Chromium sans interface)
 scripts/make_icons.py         régénère les icônes dans icons/
 vendor/                       pdf.js, pdf-lib et JSZip, figés
 icons/                        icônes de l'app (favicon, PWA, Dock)
